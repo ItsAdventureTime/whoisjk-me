@@ -1,7 +1,7 @@
 # Security and privacy guide
 
 **Reviewed:** 2026-08-22
-**Scope:** public iamjk.site source, contact endpoint, container runtime, and Git release workflow
+**Scope:** public whoisjk.me source, contact endpoint, container runtime, and Git release workflow
 
 The 2026-08-08 personal-context review informs the public copy. Only the
 non-sensitive, intentionally shareable layer belongs here. The source profile
@@ -9,7 +9,7 @@ stays outside this repository.
 
 ## Public-content rules
 
-iamjk.site is a personal website with a privacy-conscious contact endpoint.
+whoisjk.me is a personal website with a privacy-conscious contact endpoint.
 
 - Do not publish an email address or `mailto:` link. Visitors use the protected contact form.
 - Do not publish JK’s age or year of birth.
@@ -145,8 +145,8 @@ push the local commit:
 ```bash
 gh auth status
 gh auth setup-git --hostname github.com
-gh repo view ItsAdventureTime/iamjk-site --json nameWithOwner,defaultBranchRef
-git remote set-url origin https://github.com/ItsAdventureTime/iamjk-site.git
+ gh repo view ItsAdventureTime/whoisjk-me --json nameWithOwner,defaultBranchRef
+ git remote set-url origin https://github.com/ItsAdventureTime/whoisjk-me.git
 git add <reviewed-files>
 git diff --cached --check
 git commit -S -m "Describe the change"

@@ -71,6 +71,8 @@ test("builds the personal site as a complete static document", async () => {
   assert.match(source, /const readoutNumber = section\?\.dataset\.worldIndex/);
   assert.match(source, /const readoutTitle = section\?\.dataset\.worldReadout/);
   assert.match(source, /turnstileSiteKey/);
+  assert.match(source, /Replace with the public Site Key for the `whoisjk-me` Turnstile widget/);
+  assert.match(html, /whoisjk\.me \/ a personal field guide/i);
   assert.match(source, /\/api\/contact/);
   assert.match(source, /Content-Type.*application.json/);
   assert.doesNotMatch(source, /TURNSTILE_SECRET_VALUE|RESEND_API_KEY_VALUE/);
@@ -78,13 +80,26 @@ test("builds the personal site as a complete static document", async () => {
   const endpoint = await readFile(new URL("../src/pages/api/contact.ts", import.meta.url), "utf8");
   assert.match(endpoint, /siteverify/);
   assert.match(endpoint, /result\.success === true/);
-  assert.match(endpoint, /iamjk-site-contact/);
+  assert.match(endpoint, /whoisjk-me-contact/);
   assert.match(endpoint, /idempotency-key/);
   assert.match(endpoint, /requestId/);
+  assert.match(endpoint, /CONTACT_RATE_LIMITER\.limit/);
+  assert.match(endpoint, /cf-connecting-ip/);
   assert.match(endpoint, /origin !==/);
-  assert.match(endpoint, /https:\/\/iamjk\.site/);
+  assert.match(endpoint, /https:\/\/whoisjk\.me/);
+  assert.match(endpoint, /result\.hostname === "whoisjk\.me"/);
+  assert.match(endpoint, /subject: .*whoisjk\.me/);
   assert.match(endpoint, /application/);
   assert.doesNotMatch(endpoint, /website@iamjk\.site|hello@iamjk\.site/);
+
+  const middleware = await readFile(new URL("../src/middleware.ts", import.meta.url), "utf8");
+  assert.match(middleware, /Content-Security-Policy/);
+  assert.match(middleware, /private, no-store/);
+  assert.match(middleware, /Strict-Transport-Security/);
+
+  const staticHeaders = await readFile(new URL("../public/_headers", import.meta.url), "utf8");
+  assert.match(staticHeaders, /Content-Security-Policy/);
+  assert.match(staticHeaders, /X-Frame-Options: DENY/);
 
   const astroConfig = await readFile(new URL("../astro.config.mjs", import.meta.url), "utf8");
   assert.match(astroConfig, /checkOrigin:\s*true/);
@@ -124,25 +139,9 @@ test("builds the personal site as a complete static document", async () => {
   assert.match(quadlet, /DropCapability=all/);
 
   const deployment = await readFile(new URL("../scripts/deploy-vps.sh", import.meta.url), "utf8");
-  assert.match(deployment, /public_post_status/);
-  assert.match(deployment, /expected HTTP 400 validation response/);
-  assert.match(deployment, /journalctl --user -u caddy\.service/);
-  assert.match(deployment, /@iamjk_api path \/api\/\*/);
-  assert.match(deployment, /CDN-Cache-Control "no-store"/);
-  assert.match(deployment, /max_size 16KB/);
-  assert.match(deployment, /iamjk\[\.\]site/);
-  assert.match(deployment, /before-iamjk-site/);
-  assert.match(deployment, /fmt --overwrite/);
-  assert.match(deployment, /caddy_format_snapshot/);
-  assert.match(deployment, /cmp -s/);
-  assert.match(deployment, /Content-Type.*application.json/);
-  assert.match(deployment, /--user 0 --userns=host/);
-  assert.match(deployment, /caddy_format_volume=.*:rw/);
-  assert.match(deployment, /--network none --security-opt label=disable/);
-  assert.match(deployment, /caddy_temp_run validate --config/);
-  assert.match(deployment, /podman exec caddy test -r/);
-  assert.doesNotMatch(deployment, /:rw,Z/);
-  assert.match(deployment, /podman exec caddy caddy validate/);
+  assert.match(deployment, /VPS deployment is retired: this project now deploys to Cloudflare Workers/);
+  assert.match(deployment, /CLOUDFLARE_WORKERS_DEPLOYMENT\.md/);
+  assert.doesNotMatch(deployment, /rsync|podman|systemctl|ssh/);
 
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   const security = await readFile(new URL("../SECURITY.md", import.meta.url), "utf8");

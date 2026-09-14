@@ -1,4 +1,5 @@
 import type { APIRoute } from "astro";
+import { env } from "cloudflare:workers";
 import { countryCodes } from "../../lib/countries";
 
 const TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
@@ -8,13 +9,10 @@ const MAX_NAME_LENGTH = 80;
 const MAX_MOBILE_LENGTH = 32;
 const MAX_EMAIL_LENGTH = 254;
 const MIN_COMPLETION_MS = 1_200;
-const RATE_WINDOW_MS = 15 * 60 * 1_000;
-const RATE_LIMIT = 5;
-const attempts = new Map<string, number[]>();
 const validCountryCodes = new Set(countryCodes);
 
-function secret(name: string): string {
-  const value = process.env[name]?.trim();
+function secret(name: keyof Pick<ContactEnvironment, "TURNSTILE_SECRET" | "RESEND_API_KEY" | "RESEND_FROM" | "RESEND_TO">, env: ContactEnvironment): string {
+  const value = env[name]?.trim();
   if (value) return value;
   throw new Error(`Missing runtime secret: ${name}`);
 }
@@ -29,15 +27,7 @@ function validEmail(value: string): boolean {
 }
 
 function requestIp(request: Request): string {
-  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-}
-
-function rateLimited(ip: string): boolean {
-  const now = Date.now();
-  const recent = (attempts.get(ip) || []).filter((time) => now - time < RATE_WINDOW_MS);
-  recent.push(now);
-  attempts.set(ip, recent);
-  return recent.length > RATE_LIMIT;
+  return request.headers.get("cf-connecting-ip")?.trim() || "unknown";
 }
 
 async function verifyTurnstile(token: string, request: Request, secretKey: string): Promise<boolean> {
@@ -49,17 +39,19 @@ async function verifyTurnstile(token: string, request: Request, secretKey: strin
   });
   if (!response.ok) return false;
   const result = await response.json() as { success?: boolean; hostname?: string; action?: string };
-  return result.success === true && (!result.hostname || result.hostname === "iamjk.site") && (!result.action || result.action === "turnstile-spin-v2");
+  return result.success === true && (!result.hostname || result.hostname === "whoisjk.me") && (!result.action || result.action === "turnstile-spin-v2");
 }
 
 export const POST: APIRoute = async ({ request }) => {
+  const runtimeEnv = env as unknown as ContactEnvironment;
   const requestId = crypto.randomUUID();
   const origin = request.headers.get("origin");
-  if (origin !== "https://iamjk.site") {
+  if (origin !== "https://whoisjk.me") {
     return Response.json({ message: "Please submit your message through the form." }, { status: 403 });
   }
-  if (rateLimited(requestIp(request))) {
-    return Response.json({ message: "Please wait a moment before trying again." }, { status: 429, headers: { "retry-after": "900" } });
+  const { success } = await runtimeEnv.CONTACT_RATE_LIMITER.limit({ key: requestIp(request) });
+  if (!success) {
+    return Response.json({ message: "Please wait a moment before trying again." }, { status: 429, headers: { "retry-after": "60" } });
   }
   const contentType = request.headers.get("content-type") || "";
   const mediaType = contentType.split(";")[0].trim().toLowerCase();
@@ -98,21 +90,21 @@ export const POST: APIRoute = async ({ request }) => {
     const token = textValue(fields["cf-turnstile-response"], 2_048);
     if (website || (startedAt > 0 && Date.now() - startedAt < MIN_COMPLETION_MS)) return Response.json({ message: "Please try again." }, { status: 400 });
     if (!name || !validCountryCodes.has(country) || !message || (email && !validEmail(email)) || !token) return Response.json({ message: "Check the highlighted fields and try again." }, { status: 400 });
-    if (!(await verifyTurnstile(token, request, secret("TURNSTILE_SECRET")))) return Response.json({ message: "We could not verify your submission. Please try again." }, { status: 403 });
+    if (!(await verifyTurnstile(token, request, secret("TURNSTILE_SECRET", runtimeEnv)))) return Response.json({ message: "We could not verify your submission. Please try again." }, { status: 403 });
 
-    const apiKey = secret("RESEND_API_KEY");
-    const from = secret("RESEND_FROM");
-    const to = secret("RESEND_TO");
+    const apiKey = secret("RESEND_API_KEY", runtimeEnv);
+    const from = secret("RESEND_FROM", runtimeEnv);
+    const to = secret("RESEND_TO", runtimeEnv);
     if (!validEmail(from) || !validEmail(to)) {
       console.error("[contact] invalid Resend sender configuration", { requestId });
       return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}.` }, { status: 503 });
     }
     const replyTo = email || undefined;
-    const emailBody = [`New message from iamjk.site`, ``, `Name: ${name}`, `Country: ${country}`, `Email: ${email || "Not provided"}`, `Mobile: ${mobile || "Not provided"}`, ``, message].join("\n");
+    const emailBody = [`New message from whoisjk.me`, ``, `Name: ${name}`, `Country: ${country}`, `Email: ${email || "Not provided"}`, `Mobile: ${mobile || "Not provided"}`, ``, message].join("\n");
     const resend = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json", "idempotency-key": requestId, "user-agent": "iamjk-site-contact/1.0" },
-      body: JSON.stringify({ from, to: [to], reply_to: replyTo, subject: `New message from ${name}`, text: emailBody }),
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json", "idempotency-key": requestId, "user-agent": "whoisjk-me-contact/1.0" },
+      body: JSON.stringify({ from, to: [to], reply_to: replyTo, subject: `New message from ${name} via whoisjk.me`, text: emailBody }),
       signal: AbortSignal.timeout(10_000),
     });
     if (!resend.ok) {

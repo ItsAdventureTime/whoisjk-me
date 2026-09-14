@@ -1,11 +1,15 @@
 import { defineConfig } from "astro/config";
-import node from "@astrojs/node";
+import cloudflare from "@astrojs/cloudflare";
 
 export default defineConfig({
   output: "server",
-  adapter: node({ mode: "standalone" }),
+  adapter: cloudflare({
+    prerenderEnvironment: "node",
+    imageService: "compile",
+  }),
+  session: false,
   security: {
     checkOrigin: true,
   },
-  site: "https://iamjk.site",
+  site: "https://whoisjk.me",
 });

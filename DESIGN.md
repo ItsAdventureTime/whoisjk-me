@@ -1,10 +1,10 @@
-# iamjk.site design guide
+# whoisjk.me design guide
 
 **Status:** implementation reference for the current site
 **Reviewed:** 2026-08-22
 **Audience:** future content, visual, and implementation changes
 
-iamjk.site is a personal field guide for Juan Karlo “JK” de Guzman. It is deliberately personal rather than a work portfolio: visitors should meet a person through his faith, language, systems curiosity, technology shifts, books, ideas, and practical way of learning.
+whoisjk.me is a personal field guide for Juan Karlo “JK” de Guzman. It is deliberately personal rather than a work portfolio: visitors should meet a person through his faith, language, systems curiosity, technology shifts, books, ideas, and practical way of learning.
 
 The 2026-08-08 context refresh adds public details about JK’s early Windows 95-era computing, online English teaching since 2019, interdisciplinary study interests, reading habits, need for quiet after social intensity, and preference for inspectable systems with practical convenience. Keep the site human and specific without publishing the source profile itself.
 
@@ -225,3 +225,6 @@ The implementation is intentionally small:
 - `app/globals.css`: tokens, layout, responsive rules, motifs, motion, and contrast surfaces.
 - `astro.config.mjs`: server output, standalone Node adapter, and canonical site URL.
 - `tests/rendered-html.test.mjs`: build-output and design invariant checks.
+# Deployment target
+
+The application deploys to Cloudflare Workers. Any VPS, Podman, Caddy, or Docker-container references in historical operational notes are inert; use [`CLOUDFLARE_WORKERS_DEPLOYMENT.md`](CLOUDFLARE_WORKERS_DEPLOYMENT.md).
