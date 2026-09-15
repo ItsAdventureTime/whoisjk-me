@@ -98,6 +98,10 @@ export const POST: APIRoute = async ({ request }) => {
       console.error("[contact] invalid Cloudflare Email Service sender configuration", { requestId });
       return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}.` }, { status: 503 });
     }
+    if (!from.toLowerCase().endsWith("@notify.whoisjk.me")) {
+      console.error("[contact] invalid sender domain: CONTACT_FROM must end with @notify.whoisjk.me", { requestId });
+      return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}.` }, { status: 503 });
+    }
     if (!runtimeEnv.EMAIL || typeof runtimeEnv.EMAIL.send !== "function") {
       console.error("[contact] missing or unconfigured EMAIL binding", { requestId });
       return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}.` }, { status: 503 });

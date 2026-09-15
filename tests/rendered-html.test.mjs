@@ -16,7 +16,7 @@ test("contact delivery handles configuration, optional reply addresses, and diag
     EMAIL: { send: async (payload) => sent.push(payload) },
   };
   const exports = {};
-  const processEnv = { TURNSTILE_SECRET: "test-secret", CONTACT_FROM: "sender@example.com", CONTACT_TO: "inbox@example.com" };
+  const processEnv = { TURNSTILE_SECRET: "test-secret", CONTACT_FROM: "sender@notify.whoisjk.me", CONTACT_TO: "inbox@example.com" };
   runInNewContext(`${outputText}\nexports.POST = POST;`, {
     exports, env, countryCodes: ["PH"], Response, TextDecoder, AbortSignal, crypto,
     process: { env: processEnv },
@@ -34,10 +34,20 @@ test("contact delivery handles configuration, optional reply addresses, and diag
   assert.equal(Object.hasOwn(sent[0], "replyTo"), false);
   assert.equal(sent[0].from, processEnv.CONTACT_FROM);
   env.TURNSTILE_SECRET = "binding-secret";
-  env.CONTACT_FROM = "binding@example.com";
+  env.CONTACT_FROM = "binding@NOTIFY.WHOISJK.ME";
   assert.equal((await submit("reply@example.com")).status, 200);
   assert.equal(sent[1].replyTo, "reply@example.com");
   assert.equal(sent[1].from, env.CONTACT_FROM);
+  for (const from of ["sender@example.com", "sender@sub.notify.whoisjk.me", "sender@notify.whoisjk.me.example.com"]) {
+    env.CONTACT_FROM = from;
+    const response = await submit();
+    assert.equal(response.status, 503);
+    assert.equal(sent.length, 2);
+    assert.equal(logs.at(-1)[0], "[contact] invalid sender domain: CONTACT_FROM must end with @notify.whoisjk.me");
+    assert.ok(logs.at(-1)[1].requestId);
+    assert.doesNotMatch(await response.text(), /CONTACT_FROM|notify\.whoisjk\.me/);
+  }
+  env.CONTACT_FROM = "binding@notify.whoisjk.me";
   for (const binding of [undefined, {}]) {
     env.EMAIL = binding;
     assert.equal((await submit()).status, 503);
@@ -57,6 +67,29 @@ test("contact delivery handles configuration, optional reply addresses, and diag
   assert.equal(diagnostic.details.message, diagnostic.message);
   assert.ok(diagnostic.requestId);
   assert.doesNotMatch(await response.text(), /CONTACT_TO|test-secret/);
+});
+
+test("Turnstile ready clears loading and waiting status", async () => {
+  const source = await readFile(new URL("../src/pages/index.astro", import.meta.url), "utf8");
+  const listener = source.match(/document\.addEventListener\("iamjk:turnstile-ready", \(\) => \{[\s\S]*?\n\s*\}\);/);
+  assert.ok(listener);
+  for (const message of ["Loading secure check…", "Secure check is still loading. Please wait a moment.", "Complete the secure check before sending."]) {
+    const contactStatus = { textContent: message, className: "contact-status is-pending" };
+    let state = "loading";
+    const document = new EventTarget();
+    runInNewContext(listener[0], {
+      document, contactStatus,
+      setTurnstileState: (value) => { state = value; },
+      announceContactStatus: (className, text) => {
+        contactStatus.className = `contact-status ${className}`;
+        contactStatus.textContent = text;
+      },
+    });
+    document.dispatchEvent(new Event("iamjk:turnstile-ready"));
+    assert.equal(state, "ready");
+    assert.equal(contactStatus.textContent, "");
+    assert.equal(contactStatus.className.trim(), "contact-status");
+  }
 });
 
 test("builds the personal site as a complete static document", async () => {

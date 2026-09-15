@@ -424,9 +424,8 @@ const pageDescription = "A personal field guide to JK de Guzman, covering faith,
         if (message) announceContactStatus(state === "error" || state === "expired" ? "is-error" : "is-pending", message);
       };
       document.addEventListener("iamjk:turnstile-ready", () => {
-        const wasWaiting = contactStatus?.textContent?.startsWith("Secure check") === true;
         setTurnstileState("ready");
-        if (wasWaiting) announceContactStatus("", "");
+        announceContactStatus("", "");
       });
       document.addEventListener("iamjk:turnstile-expired", () => {
         setTurnstileState("expired", "Secure check expired. Complete it again to send your message.");
