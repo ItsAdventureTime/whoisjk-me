@@ -12,12 +12,17 @@ type ContactRateLimiter = {
 // local structural declaration small because this project only calls `limit`.
 type RateLimit = ContactRateLimiter;
 
-type ContactEnvironment = Omit<Env, "CONTACT_RATE_LIMITER"> & {
+interface SendEmail {
+  send: (message: { from: string; to: string; replyTo?: string; subject: string; text: string }) => Promise<{ messageId: string }>;
+}
+
+type ContactEnvironment = Omit<Env, "CONTACT_RATE_LIMITER" | "EMAIL"> & {
   CONTACT_RATE_LIMITER: ContactRateLimiter;
-  RESEND_API_KEY: string;
-  RESEND_FROM: string;
-  RESEND_TO: string;
+  EMAIL: SendEmail;
+  TURNSTILE_SITE_KEY?: string;
   TURNSTILE_SECRET: string;
+  CONTACT_FROM: string;
+  CONTACT_TO: string;
 };
 
 interface Turnstile {

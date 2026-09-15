@@ -96,12 +96,23 @@ Monitor the result in Cloudflare Dashboard → Workers & Pages → `whoisjk-me` 
 
 ## 6. Verify production configuration
 
-The one-time Dashboard setup must include these encrypted Worker secrets:
+The one-time Dashboard setup must include plaintext environment variables:
+
+- `TURNSTILE_SITE_KEY`
+- `CONTACT_FROM`
+
+It must also include encrypted Worker secrets:
 
 - `TURNSTILE_SECRET`
-- `RESEND_API_KEY`
-- `RESEND_FROM`
-- `RESEND_TO`
+- `CONTACT_TO`
+
+Before pushing, also configure `TURNSTILE_SITE_KEY` under **Settings** →
+**Builds** → **Build variables and secrets** so prerendering includes the public
+site key. Runtime variables alone do not populate the static homepage.
+
+The `EMAIL` binding delivers contact messages through Cloudflare Email Service;
+confirm `notify.whoisjk.me` is active in Cloudflare Email Service before the
+post-deploy contact-form test.
 
 The custom domain is configured at Workers & Pages → `whoisjk-me` →
 **Settings** → **Domains & Routes** → **Add** → **Custom Domain** with

@@ -6,13 +6,13 @@
 
 DEPLOY_VPS_HOST="your-vps-hostname"
 DEPLOY_VPS_USER="jk"
-DEPLOY_VPS_PATH="/home/jk/iamjk-site"
+DEPLOY_VPS_PATH="/home/jk/whoisjk-me"
 
 # Optional overrides. The normal deployment uses the pinned project defaults.
 # DEPLOY_PNPM_VERSION="11.15.1"
 # DEPLOY_UPDATE_CADDY="1"
 # DEPLOY_CADDY_CONFIG_PATH="/home/jk/caddy/conf/Caddyfile"
-# DEPLOY_QUADLET_DIR="/home/jk/.config/containers/systemd/iamjk-site"
-# DEPLOY_APP_CONTAINER_NAME="iamjk-site"
-# DEPLOY_RELEASE_IMAGE="localhost/iamjk-site:release"
+# DEPLOY_QUADLET_DIR="/home/jk/.config/containers/systemd/whoisjk-me"
+# DEPLOY_APP_CONTAINER_NAME="whoisjk-me"
+# DEPLOY_RELEASE_IMAGE="localhost/whoisjk-me:release"
 # DEPLOY_TARGET_PLATFORM="linux/amd64"

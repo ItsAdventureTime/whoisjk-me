@@ -13,16 +13,16 @@ FRONTIER and IMPLEMENTER are roles, not specific models or products.
 
 # Operator Control
 
-- Active task: `T-002`
-- Contract revision: `1`
-- Status: `READY_FOR_FRONTIER_REVIEW`
-- Next role: `FRONTIER`
-- Next phase: `PHASE_1`
-- Human action: `Run PHASE 1 with a FRONTIER for independent review.`
+- Active task: `T-003`
+- Contract revision: `3`
+- Status: `READY_FOR_IMPLEMENTER`
+- Next role: `IMPLEMENTER`
+- Next phase: `PHASE_2`
+- Human action: `In Cloudflare Dashboard → Workers & Pages → whoisjk-me → Settings → Builds → Build variables and secrets, add TURNSTILE_SITE_KEY (plaintext Turnstile site key), then run PHASE 2 with an IMPLEMENTER.`
 - Completion state: `NOT_COMPLETE`
 - Human validation required: `YES`
 - Last verified branch: `main`
-- Last verified HEAD: `7d5c204`
+- Last verified HEAD: `231034f7b0debe3bca54cd62dc0d2d728eb81622` (15 modified implementation/configuration/documentation files plus this handoff; uncommitted)
 
 > HUMAN:
 >
@@ -158,19 +158,26 @@ If HUMAN validation is explicitly not required:
 
 # Active Task
 
-## `T-002`
+## `T-003`
 
 ### Title
 
-Configure Cloudflare Workers Builds via GitHub integration
+Migrate contact delivery to Cloudflare Email Service and externalize Turnstile keys to Cloudflare Workers dashboard
 
 ### Human Request
 
-Another thing, as far as I know, Cloudflare workers can build everything and there is no need for me to build it via local or docker sandboxes. in fact with my other cloudflare workers instances, whenever something from GitHub repo is updated/uploaded it is automatically deployed to Cloudflare workers like Cloudflare workers automatically detects changes, builds automatically, and deploys it automatically. Of course it is not you who will implement/execute this so you will just write this down/plant his down right? check documentation: `https://developers.cloudflare.com/workers/`
+- Instead of using Resend API, I want to fully utilize this `https://developers.cloudflare.com/email-service/get-started/send-emails/` since I am subscribed to Cloudflare workers monthly $5 plan.
+  - I already have configured it to work with `notify.whoisjk.me`.
+- And, I want both site and secret keys of Cloudflare turnstile to be configured as environment variables (secrets) under the Cloudflare workers dashboard of `whoisjk-me`.
+  - Guide: `https://developers.cloudflare.com/workers/`
 
 ### Objective
 
-Transition repository configuration, deployment documentation, and release workflow from manual local/sandbox Wrangler CLI deployments to automated Cloudflare Workers Builds (GitHub Git integration). Ensure repository build scripts, dependencies, Astro SSR Cloudflare adapter, and documentation (`CLOUDFLARE_WORKERS_DEPLOYMENT.md`, `RELEASE_WORKFLOW.md`, `README.md`) support automatic building and deployment upon push to `main` of `ItsAdventureTime/whoisjk-me`.
+1. Replace Resend API integration with Cloudflare Email Service (`send_email` binding) in `wrangler.jsonc` and `src/pages/api/contact.ts`. Route contact emails from `notify.whoisjk.me` via `env.EMAIL.send(...)`.
+2. Externalize the Turnstile Site Key from `src/pages/index.astro` so both `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET` are managed as environment variables/secrets under the Cloudflare Workers dashboard of `whoisjk-me`.
+3. Update environment type declarations (`src/env.d.ts`), documentation (`CLOUDFLARE_WORKERS_DEPLOYMENT.md`, `README.md`, `SECURITY.md`, `RELEASE_WORKFLOW.md`), and tests (`tests/rendered-html.test.mjs`) to reflect the Cloudflare Email Service and dashboard-managed Turnstile configuration.
+4. Purge all remaining references to `iamjk.site` (and `iamjk-site` where appropriate) across workspace documents, configuration files, and examples (`deploy/Caddyfile.example`, `deploy/iamjk-site.container.example`, `deploy/iamjk-site.local.conf.example`, `SECURITY.md`, `tests/rendered-html.test.mjs`), updating them to `whoisjk.me` / `whoisjk-me`.
+5. Verify all tests in Docker Sandbox, stage and commit the verified changeset, and push to GitHub remote `main` to trigger Cloudflare Workers Builds deployment.
 
 ---
 
@@ -182,28 +189,34 @@ Do not convert an observation into a claimed root cause unless verified.
 
 ## Current Observations
 
-- Human’s other Cloudflare Workers instances build and deploy automatically from GitHub repository updates.
-- Human explicitly requested removing the requirement to build and deploy via local machine or Docker sandboxes.
-- Human wants changes pushed to GitHub (`ItsAdventureTime/whoisjk-me`) to be automatically detected, built, and deployed by Cloudflare Workers.
-- Human observed that GitHub is not updated with commits/changes, expecting changes on GitHub before manually creating/configuring Cloudflare Workers.
-- Human enquired about potential Cloudflare email service vs Resend API.
+- Human is subscribed to Cloudflare Workers monthly $5 plan (Workers Paid).
+- Human has configured Cloudflare Email Service to work with `notify.whoisjk.me`.
+- Human has configured runtime variables (`TURNSTILE_SITE_KEY`, `CONTACT_FROM`) and secrets (`TURNSTILE_SECRET`, `CONTACT_TO`) under the Cloudflare Workers dashboard of `whoisjk-me`.
+- Human wants both site and secret keys of Cloudflare Turnstile managed via Cloudflare Workers dashboard.
+- Human explicitly requested that all references to `iamjk.site` be replaced with `whoisjk.me` across workspace documents and guides.
+- Human explicitly authorized and requested: "Update, add, remove the necessary files, documents/documentation and guides both local and remote Git and push."
 
 # Scope
 
 ## Included
 
-- Retain verified working tree changes migrating project naming, URLs, endpoints, and SSR adapter to `whoisjk-me` / `whoisjk.me`.
-- Configure `wrangler.jsonc` and `package.json` for Cloudflare Workers Builds CI (`build`: `astro build`, Node >=24 engine, pnpm `11.15.1` packageManager).
-- Rewrite `CLOUDFLARE_WORKERS_DEPLOYMENT.md` to document the Cloudflare Workers Git integration (Workers Builds) workflow: connecting `ItsAdventureTime/whoisjk-me` via Cloudflare Dashboard ("Continue with GitHub"), setting build command, provisioning dashboard secrets, and attaching custom domain `whoisjk.me`.
-- Update `RELEASE_WORKFLOW.md` and `README.md` to describe the push-to-deploy workflow (`git push origin main` triggers Cloudflare build and deployment).
-- Retain local Docker Sandbox strictly for pre-commit verification (`pnpm run check`, `pnpm test`) without requiring external network access to Cloudflare APIs.
-- Stage verified files and create a clean Git commit on `main`, pushing to `origin main` to update GitHub.
+- Update `wrangler.jsonc` to declare `send_email` binding (`EMAIL`).
+- Update `src/env.d.ts` with `EMAIL` (`SendEmail` binding with `.send()`), `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET`, `CONTACT_FROM`, and `CONTACT_TO`, removing obsolete `RESEND_*` keys.
+- Update `src/pages/api/contact.ts` to send contact form submissions via `runtimeEnv.EMAIL.send(...)` with `from`, `to`, `replyTo`, `subject`, and `text`, removing all Resend API calls and headers.
+- Update `src/pages/index.astro` to retrieve `turnstileSiteKey` from environment variable (`process.env.TURNSTILE_SITE_KEY || import.meta.env.PUBLIC_TURNSTILE_SITE_KEY || ""`) without hardcoded widget key.
+- Update `tests/rendered-html.test.mjs` to assert that `src/pages/index.astro` reads the site key from environment variables and does not contain hardcoded `0x4AAAAAAEzVojpAMktzsIsI`, and remove Resend-specific assertions.
+- Purge all remaining `iamjk.site` and `iamjk-site` domain/container references in `deploy/Caddyfile.example`, `deploy/iamjk-site.container.example`, `deploy/iamjk-site.local.conf.example`, `SECURITY.md`, and update corresponding assertions in `tests/rendered-html.test.mjs`.
+- Update `CLOUDFLARE_WORKERS_DEPLOYMENT.md`, `README.md`, `SECURITY.md`, and `RELEASE_WORKFLOW.md` to document the new `send_email` binding, dashboard variables (`TURNSTILE_SITE_KEY`, `CONTACT_FROM`) and dashboard secrets (`TURNSTILE_SECRET`, `CONTACT_TO`), and remove Resend references.
+- Verify through local Docker Sandbox (`pnpm run check`, `pnpm test`, `git diff --check`).
+- Stage, commit, and push the verified changeset to `main` on `https://github.com/ItsAdventureTime/whoisjk-me`.
 
 ## Excluded
 
-- Hardcoding sensitive secrets (`TURNSTILE_SECRET`, `RESEND_API_KEY`) in repository files or Git commits.
-- Modifying site copy, biographical sections, CliftonStrengths, or visual styling.
-- Changing email backend from Resend to Cloudflare Email Routing during this task.
+- Modifying site visual design, layout, or copy.
+- Changing contact form submission endpoint `/api/contact` interface or client-side form validation.
+- Changing Turnstile action (`turnstile-spin-v2`) or verification endpoint (`https://challenges.cloudflare.com/turnstile/v0/siteverify`).
+- Changing rate limiting namespace or logic (`CONTACT_RATE_LIMITER`).
+- Bypassing the Docker Sandbox for local development commands.
 
 # Confirmed Evidence
 
@@ -211,15 +224,30 @@ Record only verified facts that materially affect the solution.
 
 Current evidence:
 
-- Git repository is on branch `main` at commit `2b963ac076ab8a5da1472ce1f46df12c47a4d286`.
-- Remote `origin` verified pointing to `https://github.com/ItsAdventureTime/whoisjk-me.git`.
-- Working tree contains verified changes migrating codebase, identifiers, API validation, and documentation to `whoisjk.me` / `whoisjk-me` with Cloudflare Workers SSR (`@astrojs/cloudflare`).
-- Local Docker Sandbox tests (`pnpm test`) and typechecks (`pnpm run check`) pass cleanly (0 errors, 1 test passing, 0 failures) without needing external network egress.
-- Working tree changes were uncommitted and unpushed; GitHub remote `origin main` is currently behind local development state.
-- `git push --dry-run origin main` succeeds with existing authentication.
-- Human explicitly authorized updating GitHub with the changes.
-- Cloudflare Workers Builds natively supports GitHub integration using repo's `wrangler.jsonc` and `pnpm run build` in Cloudflare's managed build environment.
-- Local sandbox OAuth and Docker network proxy issues are rendered irrelevant for deployment because Cloudflare builds and deploys directly from GitHub.
+- Cloudflare Workers Paid plan supports Cloudflare Email Service with Workers `send_email` binding (`send_email: [{ "name": "EMAIL" }]`).
+- The `send()` method on `env.EMAIL` accepts structured email parameters (`from`, `to`, `replyTo`, `subject`, `text`, `html`) and returns a Promise resolving to `{ messageId: string }`.
+- Human has configured Cloudflare Email Service on `notify.whoisjk.me`.
+- Human confirmed `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET`, `CONTACT_FROM`, and `CONTACT_TO` have been configured in Cloudflare Workers Dashboard.
+- `git grep -i "iamjk.site"` identified occurrences in `deploy/Caddyfile.example`, `deploy/iamjk-site.container.example`, `deploy/iamjk-site.local.conf.example`, and `SECURITY.md`.
+- Human explicitly provided authorization to commit and push to remote Git.
+- Current tests in Docker Sandbox pass with `astro build` and `tests/rendered-html.test.mjs`.
+- Revision 2 verification: Docker Sandbox `pnpm run check` passed with 0 errors,
+  0 warnings, and 0 hints; `pnpm test` passed with 1 test and 0 failures.
+- Read-only Cloudflare API inspection confirmed runtime `TURNSTILE_SITE_KEY`
+  and `CONTACT_FROM` plaintext bindings, and `TURNSTILE_SECRET` and `CONTACT_TO`
+  secret bindings. No secret values were printed or written to the repository.
+- The connected `whoisjk-me` main-branch build trigger
+  `263f785e-713a-4cc0-953e-24c101fa8161` runs `pnpm run build` and
+  `npx wrangler deploy`; its environment-variable list is empty (HTTP 200).
+- `index.astro` is prerendered in Node. The required local build produced
+  `<div class="cf-turnstile" data-sitekey data-action="turnstile-spin-v2"`:
+  the site-key attribute has no value even though the existing test passes.
+- [Cloudflare Workers Builds configuration](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)
+  distinguishes build variables from runtime variables. The runtime-only
+  configuration recorded above cannot supply the key to this static build.
+- Independent FRONTIER re-verification in Docker Sandbox: `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check` passed with 0 errors, 0 warnings, 0 hints; `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test` passed with 1 test, 0 failures; `git diff --check` passed cleanly.
+- FRONTIER blocker diagnosis: `src/pages/index.astro` static prerendering (`export const prerender = true;`) must be preserved for edge CDN delivery and zero Worker compute overhead on the root document. Turnstile keys must not be committed to Git or `wrangler.jsonc`.
+- Blocker resolution: Human must configure `TURNSTILE_SITE_KEY` under `Settings` → `Builds` → `Build variables and secrets` in the Cloudflare dashboard before production build runs on `origin main`.
 
 # Frontier Decision
 
@@ -227,9 +255,11 @@ Status:
 
 `PLANNED`
 
-- **Adopt Cloudflare Workers Builds (GitHub Integration)**: Switch the official deployment mechanism to Cloudflare's managed Git integration. Committing and pushing to `main` of `ItsAdventureTime/whoisjk-me` triggers automated build and deployment in Cloudflare's infrastructure.
-- **Eliminate Local Sandbox Deployment Burden**: Do not require local Wrangler CLI login or Docker sandbox proxy forwarding for deployments. Local sandbox is used exclusively for deterministic local development, typechecking, and test verification.
-- **Dashboard Secrets & Domain Management**: Document setting `TURNSTILE_SECRET`, `RESEND_API_KEY`, `RESEND_FROM`, and `RESEND_TO` via Cloudflare Dashboard (Settings → Variables and Secrets), and custom domain `whoisjk.me` (Settings → Domains & Routes).
+- **Adopt Cloudflare Email Service `send_email` Binding**: Replace third-party HTTPS fetch to `api.resend.com` with native Workers binding `env.EMAIL.send()`. Eliminate `RESEND_API_KEY`, `RESEND_FROM`, and `RESEND_TO`. Use `CONTACT_FROM` (from verified `notify.whoisjk.me` domain) and `CONTACT_TO` (destination inbox).
+- **Externalize Turnstile Site Key**: Replace the hardcoded `const turnstileSiteKey = "0x4AAAAAAEzVojpAMktzsIsI"` in `src/pages/index.astro` with `process.env.TURNSTILE_SITE_KEY || import.meta.env.PUBLIC_TURNSTILE_SITE_KEY || ""`.
+- **Purge `iamjk.site` References (Contract Revision 2)**: Replace all occurrences of `iamjk.site` and container references `iamjk-site` with `whoisjk.me` / `whoisjk-me` in deploy templates, documentation, and tests.
+- **Resolve Workers Builds Key Blocker (Contract Revision 3)**: Preserve static prerendering of `index.astro`. Direct the HUMAN to configure `TURNSTILE_SITE_KEY` under **Settings** → **Builds** → **Build variables and secrets** in the Cloudflare dashboard.
+- **Execute Verification, Commit, and Push via IMPLEMENTER (Contract Revision 3)**: Bounded Phase 2 contract assigned to IMPLEMENTER to re-run verification in Docker Sandbox, stage and commit the verified changeset, push to `origin main`, and transition handoff to `READY_FOR_HUMAN_VALIDATION`.
 
 ---
 
@@ -241,49 +271,113 @@ Status:
 
 ## Required Outcome
 
-1. Review and prepare all uncommitted migration changes for Git commit to `main`.
-2. Ensure `package.json` and `wrangler.jsonc` have all configurations needed for Cloudflare Workers Builds (entrypoint `@astrojs/cloudflare/entrypoints/server`, build script `astro build`, engines `node >=24.18.0`, packageManager `pnpm@11.15.1`).
-3. Rewrite `CLOUDFLARE_WORKERS_DEPLOYMENT.md` to document the Cloudflare Workers Git integration (Workers Builds) flow:
-   - Connecting `ItsAdventureTime/whoisjk-me` via Cloudflare Dashboard (Workers & Pages → Create an app → Continue with GitHub).
-   - Specifying build command `pnpm run build` and root directory `/`.
-   - Provisioning secrets (`TURNSTILE_SECRET`, `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_TO`) in Cloudflare Dashboard.
-   - Attaching custom domain `whoisjk.me` in Cloudflare Dashboard.
-4. Update `RELEASE_WORKFLOW.md` and `README.md` to describe the release gate: verify locally via Docker Sandbox (`pnpm run check`, `pnpm test`), commit, push to GitHub `main` → Cloudflare automatically builds and deploys.
-5. Execute local verification (`pnpm run check`, `pnpm test`) to ensure everything is green.
+1. Add `send_email` binding named `EMAIL` in `wrangler.jsonc`:
+   ```jsonc
+   "send_email": [
+     {
+       "name": "EMAIL"
+     }
+   ],
+   ```
+2. Update `src/env.d.ts`:
+   - Declare `SendEmail` binding interface with `send(message: ...): Promise<{ messageId: string }>`.
+   - Update `ContactEnvironment` to include `EMAIL: SendEmail`, `TURNSTILE_SITE_KEY?: string`, `TURNSTILE_SECRET: string`, `CONTACT_FROM: string`, `CONTACT_TO: string`, and remove `RESEND_*` properties.
+3. Update `src/pages/api/contact.ts`:
+   - Read `CONTACT_FROM` and `CONTACT_TO` from `runtimeEnv` via `secret()` helper.
+   - Replace the `fetch("https://api.resend.com/emails", ...)` call with `runtimeEnv.EMAIL.send(...)`:
+     ```ts
+     await runtimeEnv.EMAIL.send({
+       from,
+       to,
+       replyTo,
+       subject: `New message from ${name} via whoisjk.me`,
+       text: emailBody,
+     });
+     ```
+   - Catch and log error codes/messages returned by `runtimeEnv.EMAIL.send(...)`.
+   - Remove all Resend headers, URLs, and references.
+4. Update `src/pages/index.astro`:
+   - Remove hardcoded `"0x4AAAAAAEzVojpAMktzsIsI"`.
+   - Read `turnstileSiteKey` from `process.env.TURNSTILE_SITE_KEY || import.meta.env.PUBLIC_TURNSTILE_SITE_KEY || ""`.
+5. Update `tests/rendered-html.test.mjs`:
+   - Assert `src/pages/index.astro` contains `TURNSTILE_SITE_KEY` and does not contain `0x4AAAAAAEzVojpAMktzsIsI`.
+   - Assert `src/pages/api/contact.ts` calls `EMAIL.send` and does not reference `api.resend.com`.
+   - Replace any stale Resend assertions with the new email service expectations.
+6. Update documentation files:
+   - `CLOUDFLARE_WORKERS_DEPLOYMENT.md`: Update Dashboard Variables and Secrets section with `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET`, `CONTACT_FROM`, and `CONTACT_TO`. Document `notify.whoisjk.me` Email Sending domain setup and `EMAIL` binding.
+   - `README.md`, `SECURITY.md`, `RELEASE_WORKFLOW.md`: Replace Resend mentions with Cloudflare Email Service.
+7. Purge all remaining `iamjk.site` and `iamjk-site` references (Contract Revision 2):
+   - In `deploy/Caddyfile.example`: Replace `iamjk.site {` with `whoisjk.me {`, `@iamjk_api` with `@whoisjk_api`, and `reverse_proxy iamjk-site:4321` with `reverse_proxy whoisjk-me:4321`.
+   - In `deploy/iamjk-site.container.example`: Replace `Description=iamjk.site Astro application` with `Description=whoisjk.me Astro application`, `Image=localhost/iamjk-site:release` with `Image=localhost/whoisjk-me:release`, `ContainerName=iamjk-site` with `ContainerName=whoisjk-me`.
+   - In `deploy/iamjk-site.local.conf.example`: Replace `DEPLOY_VPS_PATH="/home/jk/iamjk-site"` with `/home/jk/whoisjk-me`, `DEPLOY_QUADLET_DIR` with `whoisjk-me`, `DEPLOY_APP_CONTAINER_NAME` with `whoisjk-me`, `DEPLOY_RELEASE_IMAGE` with `localhost/whoisjk-me:release`.
+   - In `SECURITY.md`: Replace `iamjk-site:4321` with `whoisjk-me:4321`.
+   - In `tests/rendered-html.test.mjs`: Update Caddy matcher assertion from `@iamjk_api` to `@whoisjk_api`. Ensure negative assertions forbidding `website@iamjk.site` and `hello@iamjk.site` remain intact.
+8. Run verification in Docker Sandbox:
+   ```bash
+   jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check
+   jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test
+   git diff --check
+   ```
+9. Stage, commit, and push the verified changeset to `main` on `https://github.com/ItsAdventureTime/whoisjk-me` (Contract Revision 3):
+   - **Prerequisites**: HUMAN configures `TURNSTILE_SITE_KEY` in Cloudflare Dashboard → **Workers & Pages** → `whoisjk-me` → **Settings** → **Builds** → **Build variables and secrets** before Phase 2 runs.
+   - **Verification**: Run `pnpm run check`, `pnpm test`, and `git diff --check` in Docker Sandbox.
+   - **Stage and Commit**:
+     ```bash
+     git add -A
+     git commit -m "feat: migrate contact delivery to Cloudflare Email Service, externalize Turnstile keys, and purge legacy iamjk.site references"
+     ```
+   - **Push**:
+     ```bash
+     git push origin main
+     ```
+   - **Status Verification**: Confirm `git status --porcelain` is clean.
+   - **Handoff**: Transition handoff state to `READY_FOR_HUMAN_VALIDATION`.
 
 ## Relevant Components
 
-- `CLOUDFLARE_WORKERS_DEPLOYMENT.md`
-- `RELEASE_WORKFLOW.md`
-- `README.md`
-- `package.json`
 - `wrangler.jsonc`
+- `src/env.d.ts`
+- `src/pages/api/contact.ts`
+- `src/pages/index.astro`
 - `tests/rendered-html.test.mjs`
+- `CLOUDFLARE_WORKERS_DEPLOYMENT.md`
+- `README.md`
+- `SECURITY.md`
+- `RELEASE_WORKFLOW.md`
+- `deploy/Caddyfile.example`
+- `deploy/iamjk-site.container.example`
+- `deploy/iamjk-site.local.conf.example`
 
 ## Constraints
 
-- Execute local builds, typechecks, and tests via Docker Sandbox: `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm <command>`.
-- Do not check sensitive secrets (`TURNSTILE_SECRET`, `RESEND_API_KEY`) into Git.
-- Preserve existing working tree changes and adapter configurations.
+- Route local builds, typechecks, and tests through Docker Sandbox: `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm <command>`.
+- Do not commit sensitive keys (`TURNSTILE_SECRET`, destination inbox email) into Git.
+- Keep contact rate limiting (`CONTACT_RATE_LIMITER`), request size limits, and Turnstile Siteverify validation intact.
 
 ## Must Preserve
 
-- Contact rate limiting logic (`CONTACT_RATE_LIMITER`) and form validation constraints.
-- Content Security Policy and HTTP security headers in `src/middleware.ts` and `public/_headers`.
-- Accessibility standards and visual design system.
+- Contact rate limiting logic (`CONTACT_RATE_LIMITER`) and form field validation constraints (name, country code, message, honeypot).
+- Content Security Policy in `src/middleware.ts` and `public/_headers`.
+- Static prerendering of `index.astro` (`export const prerender = true;`).
+- Accessibility, design system, and visual presentation.
 
 ## Explicitly Out of Scope
 
-- Performing autonomous live Cloudflare Worker deployments without user interaction.
-- Rewriting personal biography copy.
+- Redesigning site layout, biography, or CliftonStrengths.
+- Modifying Cloudflare Email Service DNS records or MX/SPF/DKIM/DMARC configuration on the remote zone (handled in Cloudflare dashboard by Human).
+- Directly executing production deployments from macOS.
 
 # Acceptance Criteria
 
-- [x] `package.json` and `wrangler.jsonc` verified compatible with Cloudflare Workers Builds CI.
-- [x] `CLOUDFLARE_WORKERS_DEPLOYMENT.md` documents complete GitHub Git integration runbook.
-- [x] `RELEASE_WORKFLOW.md` reflects push-to-deploy workflow.
+- [x] `wrangler.jsonc` contains `send_email` binding for `EMAIL`.
+- [x] `src/pages/api/contact.ts` dispatches emails via `runtimeEnv.EMAIL.send(...)` with no Resend dependencies.
+- [x] `src/pages/index.astro` resolves Turnstile Site Key from environment variable (`process.env.TURNSTILE_SITE_KEY || import.meta.env.PUBLIC_TURNSTILE_SITE_KEY`) without hardcoded widget key.
+- [x] `src/env.d.ts` defines types for `EMAIL` binding, `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET`, `CONTACT_FROM`, and `CONTACT_TO`.
+- [x] Documentation (`CLOUDFLARE_WORKERS_DEPLOYMENT.md`, `README.md`, `SECURITY.md`, `RELEASE_WORKFLOW.md`) accurately describes Cloudflare Email Service and dashboard variables/secrets.
+- [x] All active domain/container references in deploy templates and documentation replaced with `whoisjk.me` / `whoisjk-me`; contract-specified template filenames, historical handoff text, and negative regression assertions retained.
+- [x] `tests/rendered-html.test.mjs` updated to match new Caddy matcher and passes with 0 failures in Docker Sandbox.
 - [x] `pnpm run check` passes with 0 errors in Docker Sandbox.
-- [x] `pnpm test` passes with 0 failures in Docker Sandbox.
+- [ ] All verified changes committed and pushed to `origin main` on GitHub to trigger Cloudflare Workers Builds.
 
 ---
 
@@ -293,7 +387,8 @@ Status:
 
 - [x] `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check` exits with 0 errors.
 - [x] `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test` exits with 0 failures.
-- [x] `git remote -v` outputs `https://github.com/ItsAdventureTime/whoisjk-me.git`.
+- [x] `git diff --check` exits with 0 whitespace/formatting errors.
+- [ ] `git status --porcelain` clean after commit and push.
 
 ## Human Validation
 
@@ -303,11 +398,17 @@ Required:
 
 HUMAN should validate:
 
-1. Commit reviewed changes and push to `main` on `https://github.com/ItsAdventureTime/whoisjk-me`.
-2. In Cloudflare Dashboard (Workers & Pages → Create an app → Continue with GitHub), connect repository `ItsAdventureTime/whoisjk-me`.
-3. In Cloudflare Dashboard, configure production secrets (`TURNSTILE_SECRET`, `RESEND_*`) under Settings → Variables and Secrets.
-4. Attach custom domain `whoisjk.me` under Settings → Domains & Routes.
-5. Verify successful automatic build and deployment at `https://whoisjk.me`.
+1. In Cloudflare Dashboard → **Workers & Pages** → `whoisjk-me` → **Settings** → **Variables and Secrets**:
+   - Add Environment Variables (plaintext): `TURNSTILE_SITE_KEY`, `CONTACT_FROM` (e.g. `contact@notify.whoisjk.me`).
+   - Add Secrets (encrypted): `TURNSTILE_SECRET`, `CONTACT_TO` (destination email address).
+   - Delete obsolete `RESEND_*` secrets (`RESEND_API_KEY`, `RESEND_FROM`, `RESEND_TO`).
+2. Verify in Cloudflare Dashboard → **Compute** → **Email Service** → **Email Sending** that `notify.whoisjk.me` domain is active and verified.
+3. After FRONTIER resolves the blocker, configure `TURNSTILE_SITE_KEY` under
+   **Settings** → **Builds** → **Build variables and secrets**, verify that the
+   production build receives it, then resume the authorized commit/push to `main`.
+4. Monitor the automatic build and deploy in Cloudflare Workers Builds.
+5. Visit `https://whoisjk.me/`, inspect Turnstile challenge widget loading with the dashboard site key, and submit a test contact form message.
+6. Verify receipt of notification email in `CONTACT_TO` inbox sent from `notify.whoisjk.me`.
 
 Relevant environment/device/browser:
 
@@ -317,69 +418,98 @@ Relevant environment/device/browser:
 
 Status:
 
-`IMPLEMENTED`
+`PARTIALLY_IMPLEMENTED_BLOCKED`
 
 ## Material Changes
 
-- Replaced the deployment guide with the Cloudflare Workers Builds GitHub
-  integration runbook, including `main`, `/`, `pnpm run build`, dashboard
-  secrets, and the `whoisjk.me` custom domain.
-- Replaced the release workflow with the Docker Sandbox check/test → commit →
-  HTTPS push to `main` → automatic Workers Builds deployment gate.
-- Replaced stale README VPS release instructions with the Workers deployment,
-  validation, secrets, and release gate documentation.
-- Aligned the rendered-output test with the existing public `whoisjk-me`
-  Turnstile Site Key replacement comment; secret-value assertions remain.
-- Committed the verified T-002 changes as `7d5c204` on `main` and pushed them
-  to `origin/main` at `https://github.com/ItsAdventureTime/whoisjk-me.git`.
+- Added the `EMAIL` Cloudflare Email Service binding and regenerated
+  `worker-configuration.d.ts`.
+- Replaced Resend delivery with `runtimeEnv.EMAIL.send(...)`; retained existing
+  request validation, rate limiting, and Turnstile verification.
+- Moved the Turnstile site key to environment-variable resolution and updated
+  source assertions plus deployment, security, release, and workspace-template guidance.
+- Audited tracked workspace guides and retired the legacy Quadlet example from
+  carrying provider credentials; a regression assertion now prevents `RESEND_*`
+  configuration from returning.
+- Revision 2: replaced deployment domain, Caddy matcher/upstream, container/image,
+  remote path, and security-guide examples with the current names. Preserved
+  contract-specified template filenames and forbidden legacy-email assertions.
+- Generalized release-archive ignore patterns to protect both old and new archive
+  names without retaining the old project name in configuration.
+- Added deployment-name regression assertions and clarified the build-time public
+  site-key requirement in all four configuration guides. Application architecture,
+  validation, rate limiting, CSP, and visual presentation remain unchanged.
 
 ## Files / Components Changed
 
-- `CLOUDFLARE_WORKERS_DEPLOYMENT.md`
-- `RELEASE_WORKFLOW.md`
-- `README.md`
+- `.dockerignore`
+- `.gitignore`
+- `wrangler.jsonc`
+- `worker-configuration.d.ts`
+- `src/env.d.ts`
+- `src/pages/api/contact.ts`
+- `src/pages/index.astro`
 - `tests/rendered-html.test.mjs`
-- `package.json` and `wrangler.jsonc` verified without changes.
+- `CLOUDFLARE_WORKERS_DEPLOYMENT.md`
+- `README.md`
+- `SECURITY.md`
+- `RELEASE_WORKFLOW.md`
+- `deploy/Caddyfile.example`
+- `deploy/iamjk-site.container.example`
+- `deploy/iamjk-site.local.conf.example`
+- `docs/ai/AI_HANDOFF.md` (this boundary update)
 
 ## Verification Executed
 
-- `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check` —
-  PASS, 0 errors.
-- `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test` — PASS,
-  0 failures.
+- `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check` — PASS, 0 errors, 0 warnings, 0 hints.
+- `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test` — PASS, build completed; 1 test, 0 failures.
 - `git diff --check` — PASS.
-- `git remote -v` — PASS; fetch and push both use
-  `https://github.com/ItsAdventureTime/whoisjk-me.git`.
-- `git push origin main` — PASS; remote `main` advanced from `2b963ac` to
-  `7d5c204`.
+- `git check-ignore .iamjk-site-release.tar .whoisjk-me-release.tar` — PASS, both ignored.
+- Final implementation diff inspected; prior correct work preserved.
+- Generated HTML inspection — empty `data-sitekey` confirmed. Existing automated
+  assertions do not validate a populated site key.
+- Cloudflare settings/build-trigger reads — PASS; runtime key exists, build
+  variables absent. No remote configuration was changed.
+- `git ls-remote origin refs/heads/main` — remote remains at `231034f7b0debe3bca54cd62dc0d2d728eb81622`.
+- `git status --porcelain` — 16 modified files; clean-tree gate NOT MET because
+  commit/push is deferred at the blocker boundary.
 
 ## Result
 
-`PASS`
+`BLOCKED` — local required checks pass; commit/push withheld because the connected
+production build lacks the public key required by the approved prerendered page.
 
 ## Remaining Uncertainty
 
-- Cloudflare Dashboard GitHub connection, production secrets, custom domain,
-  automatic build, and live contact-form behavior remain unverified until
-  HUMAN validation.
+- The public site key must be made available to Workers Builds before publishing.
+  Runtime configuration alone is insufficient. FRONTIER must resolve this
+  deployment prerequisite and return a bounded contract for the remaining work.
+- The existing test checks source configuration but passes with an empty rendered
+  site key. A build-output regression gate should be considered by FRONTIER.
+- Live Turnstile interaction and actual email receipt have not been validated.
+  No commit, push, or production deployment was performed during this invocation.
 
 ## Human Validation Recommendations
 
-- Connect `ItsAdventureTime/whoisjk-me` through Workers Builds, configure the
-  four production secrets, attach `whoisjk.me`, and verify the live site after
-  the automatic deployment succeeds.
+- Keep HUMAN validation `NOT_RUN`. After FRONTIER resolves the build-key
+  prerequisite and the authorized commit/push resumes, confirm Workers Builds
+  deployment success, the live Turnstile widget, contact-form feedback, and receipt
+  of mail from the verified `notify.whoisjk.me` domain in the configured inbox.
 
 ---
 
 # Frontier Review
 
+The acceptance below applies to the earlier implementation revision. Revision 2
+now requires FRONTIER blocker resolution and subsequent independent review.
+
 Status:
 
-`REVIEWED`
+`ACCEPTED_PENDING_HUMAN_VALIDATION`
 
 ## Decision
 
-`CHANGES_REQUESTED`
+`ACCEPTED_PENDING_HUMAN_VALIDATION`
 
 Allowed decisions:
 
@@ -390,10 +520,18 @@ Allowed decisions:
 
 ## Findings
 
-- Previous technical verification passed in Docker Sandbox (`pnpm run check`, `pnpm test`), but changes remained uncommitted in the local working tree.
-- Defect: GitHub remote `origin main` was not updated with the commit for T-002, preventing human validation of Cloudflare Workers GitHub integration.
-- Expected correction: IMPLEMENTER must stage all verified T-002 migration changes, create a clean commit on `main`, push to `origin main` (`https://github.com/ItsAdventureTime/whoisjk-me.git`), verify remote status, and re-run Docker sandbox checks.
-- Email service inquiry: Cloudflare Email Routing noted, but existing Resend API implementation is complete, secure, and tested. Retaining Resend satisfies the task without expanding scope.
+- Verified all 11 modified implementation and documentation files:
+  - `wrangler.jsonc`: declared `EMAIL` binding (`send_email`).
+  - `worker-configuration.d.ts` and `src/env.d.ts`: accurate typings for `EMAIL` (`SendEmail`), `CONTACT_RATE_LIMITER`, and dashboard variables/secrets (`TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET`, `CONTACT_FROM`, `CONTACT_TO`).
+  - `src/pages/api/contact.ts`: dispatches messages via `runtimeEnv.EMAIL.send(...)`; rate limiting, Turnstile verification, and input validation preserved; all Resend references removed.
+  - `src/pages/index.astro`: retrieves Turnstile site key from `process.env.TURNSTILE_SITE_KEY || import.meta.env.PUBLIC_TURNSTILE_SITE_KEY || ""`; hardcoded site key removed.
+  - `tests/rendered-html.test.mjs`: regression tests assert new Cloudflare Email Service binding, dynamic Turnstile site key, and absence of Resend keys/endpoints.
+  - Documentation (`CLOUDFLARE_WORKERS_DEPLOYMENT.md`, `README.md`, `SECURITY.md`, `RELEASE_WORKFLOW.md`, `deploy/iamjk-site.container.example`): audited and aligned with Cloudflare Email Service and dashboard-managed Turnstile configuration.
+- Local verification executed independently in Docker Sandbox:
+  - `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check` — PASS, 0 errors, 0 warnings.
+  - `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test` — PASS, 0 failures.
+  - `git diff --check` — PASS (clean).
+- Implementation accepted pending Human Validation. Changes are preserved uncommitted in the local tree to respect the safety boundary before human commit/push to `main` and production deployment.
 
 # Human Validation
 
@@ -410,37 +548,25 @@ Allowed values:
 
 ## Observed Result
 
-- The implementation commit `7d5c204` is present on GitHub `origin/main`.
-- Cloudflare Dashboard connection, production secrets, custom domain, and live
-  deployment have not been validated yet.
+- Human configured runtime variables/secrets in Cloudflare dashboard (`TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET`, `CONTACT_FROM`, `CONTACT_TO`) and deleted obsolete Resend references.
 
 ## Expected Result
 
-- Cloudflare Workers Builds is connected to `ItsAdventureTime/whoisjk-me`, the
-  production secrets and `whoisjk.me` custom domain are configured, and the
-  automatic deployment is live.
+- Live Turnstile widget loads via dashboard-configured `TURNSTILE_SITE_KEY`, and contact form submissions sent from `notify.whoisjk.me` arrive at `CONTACT_TO` inbox after deployment to `https://whoisjk.me`.
 
 ## Reproduction / Environment
 
-- Inspected `git status -s`, `git log -n 2 --oneline`, and
-  `git ls-remote origin refs/heads/main`; local and remote `main` are at
-  `7d5c204` after the implementation push.
-- Environment: Local repository checkout vs remote `https://github.com/ItsAdventureTime/whoisjk-me.git`.
+- Cloudflare Dashboard and live browser visit to `https://whoisjk.me`.
 
 ## Evidence
 
-- GitHub remote `main` contains the verified T-002 implementation commit
-  `7d5c204`; no implementation files remain uncommitted.
+- Human feedback received: dashboard variables configured; new requirement submitted to replace all `iamjk.site` references with `whoisjk.me` across workspace documents, and commit/push to remote Git.
 
 # Human Feedback
 
 Status:
 
-`TRIAGED`
-
-## Classification
-
-`IN_SCOPE_DEFECT`
+`CHANGED_REQUIREMENT`
 
 Allowed classifications:
 
@@ -452,10 +578,12 @@ Allowed classifications:
 
 ## Analysis
 
-- **Primary feedback (Unpushed GitHub changes)**: Classified as `IN_SCOPE_DEFECT`.
-  Corrected by committing the verified changes as `7d5c204` and pushing to
-  `origin main`; HUMAN has explicitly confirmed authorization for that update.
-- **Secondary inquiry (Cloudflare Email Service)**: Classified as `SEPARATE_NEW_TASK` / YAGNI for T-002. The site currently uses Resend API via HTTPS fetch (`https://api.resend.com/emails`), fully implemented and verified. Cloudflare Email Routing can be evaluated as a separate feature in a subsequent task.
+- Classify as `CHANGED_REQUIREMENT`.
+- Human confirmed dashboard variables/secrets were configured in Cloudflare Workers.
+- Human added explicit requirements:
+  1. Replace all remaining references to `iamjk.site` (and `iamjk-site` where appropriate) with `whoisjk.me` / `whoisjk-me` across workspace documents, deploy templates, and security guides.
+  2. Stage, commit, and push the verified changeset to `main` on GitHub remote `https://github.com/ItsAdventureTime/whoisjk-me` to trigger Cloudflare Workers Builds.
+- Frontier incremented Contract revision to `2`, updated Objective, Scope, Implementation Contract, and Acceptance Criteria. Status transitioned to `READY_FOR_IMPLEMENTER`.
 
 ---
 
@@ -463,18 +591,20 @@ Allowed classifications:
 
 Status:
 
-`NONE`
+`RESOLVED_PENDING_HUMAN_DASHBOARD_INPUT`
+
+- **Diagnosis**: `src/pages/index.astro` is statically prerendered (`export const prerender = true;`) during `pnpm run build` (`astro build`). Prerendering must be preserved for edge CDN delivery. In Cloudflare Workers Builds CI, runtime variables (`Settings` → `Variables and Secrets`) are not injected into the build environment; build-time environment variables must be defined under `Settings` → `Builds` → `Build variables and secrets`.
+- **Resolution**: The public `TURNSTILE_SITE_KEY` must be configured by the HUMAN under Cloudflare Dashboard → **Workers & Pages** → `whoisjk-me` → **Settings** → **Builds** → **Build variables and secrets** before triggering the production build on `origin main`.
+- **Contract**: Implementation Contract Revision 3 issues the bounded contract for IMPLEMENTER to re-run verification in Docker Sandbox, commit, push to `origin main`, and transition to `READY_FOR_HUMAN_VALIDATION`.
 
 ---
 
 # Next Action
 
-- Role: `FRONTIER`
-- Phase: `PHASE_1`
-- Action: Independently review commit `7d5c204`, the Docker Sandbox verification,
-  and the corrected GitHub remote state; then decide whether the task is ready
-  for HUMAN Cloudflare Workers validation.
-- Human action: Run PHASE 1 with a FRONTIER for independent review.
+- Role: `IMPLEMENTER`
+- Phase: `PHASE_2`
+- Action: Once human configures `TURNSTILE_SITE_KEY` in Cloudflare Workers Builds settings, run Docker Sandbox verification, stage and commit the verified changeset, push to `origin main`, and transition handoff to `READY_FOR_HUMAN_VALIDATION`.
+- Human action: In Cloudflare Dashboard → Workers & Pages → whoisjk-me → Settings → Builds → Build variables and secrets, add `TURNSTILE_SITE_KEY` (plaintext Turnstile site key), then run PHASE 2 with an IMPLEMENTER.
 
 ---
 
@@ -483,12 +613,12 @@ Status:
 The active task may be marked `DONE` only when all applicable conditions
 are satisfied:
 
-- [x] Acceptance Criteria satisfied.
-- [x] Required automated verification passed.
+- [ ] Acceptance Criteria satisfied.
+- [ ] Required automated verification passed.
 - [ ] FRONTIER independent review accepted.
 - [ ] Required HUMAN validation passed or is explicitly `NOT_REQUIRED`.
-- [x] No unresolved blocker remains.
-- [x] No known unresolved in-scope defect remains.
+- [ ] No unresolved blocker remains.
+- [ ] No known unresolved in-scope defect remains.
 
 When complete, Operator Control MUST say:
 
@@ -511,6 +641,7 @@ Format:
 `T-###` - short title - `DONE` - final commit/hash if available
 
 - `T-001` - Migrate site domain, Cloudflare Worker, Git remote, and Turnstile to whoisjk.me - `SUPERSEDED` by `T-002`
+- `T-002` - Configure Cloudflare Workers Builds via GitHub integration - `DONE` - `231034f`
 
 Detailed history belongs in Git rather than this document.
 

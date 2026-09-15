@@ -15,7 +15,7 @@ The checked-in configuration is the source of truth for the Workers build:
 - Node engine: `>=24.18.0`
 - Package manager: `pnpm@11.15.1`
 - Production branch: `main`
-- Contact binding: `CONTACT_RATE_LIMITER`
+- Contact bindings: `CONTACT_RATE_LIMITER`, `EMAIL` (Cloudflare Email Service)
 
 When Workers Builds runs, it uses the Wrangler version declared in
 `package.json` and the Worker name in `wrangler.jsonc`. Keep those names
@@ -45,20 +45,31 @@ identical or the build will fail.
 For an existing Worker, use Workers & Pages → `whoisjk-me` → **Settings** →
 **Builds** → **Connect**, then select the same repository and settings.
 
-## Production secrets
+## Contact delivery and dashboard configuration
 
 In Workers & Pages → `whoisjk-me` → **Settings** → **Variables and Secrets**,
-add these as encrypted production secrets:
+add these plaintext environment variables:
+
+- `TURNSTILE_SITE_KEY`
+- `CONTACT_FROM` (for example, `contact@notify.whoisjk.me`)
+
+Add these encrypted production secrets:
 
 - `TURNSTILE_SECRET`
-- `RESEND_API_KEY`
-- `RESEND_FROM`
-- `RESEND_TO`
+- `CONTACT_TO`
 
-Enter the values in the Cloudflare Dashboard only. Never commit them, place
-them in `wrangler.jsonc`, or expose them in build logs. The public Turnstile
-Site Key remains in `src/pages/index.astro`; only the secret key belongs in
-Cloudflare Worker secrets.
+Also add `TURNSTILE_SITE_KEY` under **Settings** → **Builds** → **Build variables
+and secrets**. The homepage is prerendered, so it reads this public key during
+`astro build`; setting only the runtime variable does not populate the generated
+HTML. Rebuild after changing the site key. Keep `TURNSTILE_SECRET` and
+`CONTACT_TO` in runtime secrets only. Cloudflare documents the separate scopes in
+[Workers Builds configuration](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/).
+
+Enter values in the Cloudflare Dashboard only. Never commit them, place them
+in `wrangler.jsonc`, or expose them in build logs. Delete obsolete `RESEND_*`
+variables or secrets. The `EMAIL` binding in `wrangler.jsonc` sends mail through
+Cloudflare Email Service; confirm `notify.whoisjk.me` is active under **Compute**
+→ **Email Service** → **Email Sending** before testing delivery.
 
 ## Custom domain
 

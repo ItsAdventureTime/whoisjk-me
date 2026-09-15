@@ -1,4 +1,4 @@
-iamjk.site {
+whoisjk.me {
     encode zstd gzip
 
     header {
@@ -12,18 +12,18 @@ iamjk.site {
         Permissions-Policy "camera=(), microphone=(), geolocation=()"
     }
 
-    @iamjk_api path /api/*
-    header @iamjk_api {
+    @whoisjk_api path /api/*
+    header @whoisjk_api {
         Cache-Control "private, no-store"
         CDN-Cache-Control "no-store"
         Pragma "no-cache"
     }
 
-    request_body @iamjk_api {
+    request_body @whoisjk_api {
         max_size 16KB
     }
 
-    reverse_proxy iamjk-site:4321 {
+    reverse_proxy whoisjk-me:4321 {
         header_up Host {host}
     }
 }

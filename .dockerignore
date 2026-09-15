@@ -17,4 +17,4 @@ node_modules
 dist
 coverage
 *.log
-.iamjk-site-release.tar
+.*-release.tar

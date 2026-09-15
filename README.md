@@ -5,7 +5,7 @@ personal rather than professional: it covers his interests, faith, teaching,
 technology, reading, ideas, and the questions he keeps returning to.
 
 The project is an Astro application. The public page is prerendered, while the
-contact endpoint runs in the Cloudflare Workers adapter so Turnstile and Resend
+contact endpoint runs in the Cloudflare Workers adapter so Turnstile and Cloudflare Email Service
 secrets stay server-side. The page combines a shared Canvas 2D field,
 CSS-rendered section motifs, a small GSAP interaction layer, pointer/scroll
 response, and IntersectionObserver reveals.
@@ -23,7 +23,7 @@ response, and IntersectionObserver reveals.
 - TypeScript `6.0.3`.
 - GSAP `3.15.0`.
 - Wrangler `4.127.1`.
-- Cloudflare Turnstile and Resend.
+- Cloudflare Turnstile and Cloudflare Email Service.
 - No database, remote font, or public email address.
 
 ## Repository map
@@ -34,7 +34,7 @@ response, and IntersectionObserver reveals.
   motion, and browser fallbacks.
 - `astro.config.mjs` — Workers adapter configuration and canonical site URL.
 - `src/pages/api/contact.ts` — same-origin JSON contact endpoint, Turnstile
-  verification, validation, throttling, and Resend delivery.
+  verification, validation, throttling, and Cloudflare Email Service delivery.
 - `wrangler.jsonc` — Worker name, entrypoint, compatibility, rate limiter, and
   observability configuration.
 - `tests/rendered-html.test.mjs` — build-output and design-invariant checks.
@@ -78,23 +78,28 @@ form pending/success/error feedback in a real browser.
 ## Contact form secrets and Turnstile
 
 The browser receives only the public Turnstile Site Key. The endpoint validates
-single-use tokens at Cloudflare before calling Resend, enforces field limits,
+single-use tokens at Cloudflare before sending through Cloudflare Email Service, enforces field limits,
 rejects the honeypot and fast submissions, checks same-origin requests, and
 throttles forwarded client addresses. Message content and credentials are not
 logged.
 
-Provision these encrypted production secrets in Cloudflare Dashboard → Workers
-& Pages → `whoisjk-me` → **Settings** → **Variables and Secrets**:
+In Cloudflare Dashboard → Workers & Pages → `whoisjk-me` → **Settings** →
+**Variables and Secrets**, provision these plaintext environment variables:
+
+- `TURNSTILE_SITE_KEY`
+- `CONTACT_FROM`
+
+Provision these encrypted secrets:
 
 - `TURNSTILE_SECRET`
-- `RESEND_API_KEY`
-- `RESEND_FROM`
-- `RESEND_TO`
+- `CONTACT_TO`
 
-Never commit their values or put them in `wrangler.jsonc`. The public Site Key
-belongs in `src/pages/index.astro`; the secret key belongs only in Worker
-secrets. See [`CLOUDFLARE_WORKERS_DEPLOYMENT.md`](CLOUDFLARE_WORKERS_DEPLOYMENT.md)
-for the complete setup.
+Also configure `TURNSTILE_SITE_KEY` in **Settings** → **Builds** → **Build
+variables and secrets**; the prerendered homepage needs it at build time.
+
+Never commit their values or put them in `wrangler.jsonc`. See
+[`CLOUDFLARE_WORKERS_DEPLOYMENT.md`](CLOUDFLARE_WORKERS_DEPLOYMENT.md) for the
+complete setup.
 
 ## Standards baseline
 

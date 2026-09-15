@@ -16,7 +16,7 @@ whoisjk.me is a personal website with a privacy-conscious contact endpoint.
 - Use “Philippines,” not a more precise city.
 - Keep personal details limited to the content JK intentionally chose to share.
 - Do not place credentials, API tokens, private keys, 1Password secrets, or VPS secrets in the repository.
-- Keep contact details server-side; the form sends messages through Resend without exposing the destination inbox in page source.
+- Keep contact details server-side; the form sends messages through Cloudflare Email Service without exposing the destination inbox in page source.
 
 ## Repository boundary
 
@@ -64,30 +64,24 @@ data is impossible to add later.
 The browser exposes only the public Turnstile site key. The browser submits
 same-origin JSON rather than a simple HTML form post, and the endpoint requires
 the exact production `Origin` header. The server validates
-each token at Cloudflare’s Siteverify endpoint before calling Resend. Tokens
+each token at Cloudflare’s Siteverify endpoint before calling Cloudflare Email Service. Tokens
 are single-use and short-lived. The endpoint also requires name, country, and
 message; caps field and request sizes; rejects a honeypot and implausibly fast
 submissions; checks same-origin requests; and throttles repeated attempts by
-client address. Resend failures return a short reference instead of provider
+client address. Cloudflare Email Service failures return a short reference instead of provider
 details. Server logs retain only that reference, the HTTP status, and a
 provider error type; they never retain message content, contact details, or
-credentials. Each delivery request also includes a unique Resend idempotency
-key.
+credentials.
 
-Create these secrets on the VPS and keep their values out of source control,
-container build arguments, logs, and shell history:
-
-```bash
-printf '%s' "$TURNSTILE_SECRET_VALUE" | podman secret create iamjk-site_TURNSTILE_SECRET -
-printf '%s' "$RESEND_API_KEY_VALUE" | podman secret create iamjk-site_resend-api-key -
-printf '%s' "$RESEND_FROM_VALUE" | podman secret create iamjk-site_resend-from -
-printf '%s' "$RESEND_TO_VALUE" | podman secret create iamjk-site_resend-to -
-```
-
-The Quadlet template maps these secrets to runtime-only environment variables,
-runs with `NoNewPrivileges=true`, drops all Linux capabilities, and uses a
-read-only root filesystem with a private `/tmp` tmpfs.
-Do not publish port `4321`; Caddy should reverse-proxy to `iamjk-site:4321`
+In Cloudflare Dashboard → Workers & Pages → `whoisjk-me` → **Settings** →
+**Variables and Secrets**, add `TURNSTILE_SITE_KEY` and `CONTACT_FROM` as
+plaintext environment variables, then add `TURNSTILE_SECRET` and `CONTACT_TO`
+as encrypted secrets. Keep all values out of source control, logs, and shell
+history; remove obsolete `RESEND_*` variables or secrets.
+Also configure the public `TURNSTILE_SITE_KEY` in **Settings** → **Builds** →
+**Build variables and secrets** for homepage prerendering. Keep the secret key
+and destination inbox in runtime secrets only.
+Do not publish port `4321`; Caddy should reverse-proxy to `whoisjk-me:4321`
 over `caddy.network` and preserve the public host with `header_up Host {host}`.
 The JSON request avoids Astro’s form-origin check being confused by the HTTP
 hop between Caddy and the Node adapter. Astro’s `security.checkOrigin: true`
@@ -214,7 +208,7 @@ reaches the Node endpoint.
 Run the one-time local setup from the repository root:
 
 ~~~bash
-cd ~/dev/iamjk-site
+cd ~/dev/whoisjk-me
 ./scripts/deploy-vps.sh --init
 ~~~
 

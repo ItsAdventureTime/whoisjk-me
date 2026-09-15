@@ -4,8 +4,7 @@ import { countries } from "../lib/countries";
 
 export const prerender = true;
 
-// Replace with the public Site Key for the `whoisjk-me` Turnstile widget.
-const turnstileSiteKey = "0x4AAAAAAEzVojpAMktzsIsI";
+const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY || import.meta.env.PUBLIC_TURNSTILE_SITE_KEY || "";
 
 const strengths = [
   ["01", "Maximizer", "I keep asking how a good thing could get better."],

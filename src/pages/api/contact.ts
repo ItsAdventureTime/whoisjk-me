@@ -11,7 +11,7 @@ const MAX_EMAIL_LENGTH = 254;
 const MIN_COMPLETION_MS = 1_200;
 const validCountryCodes = new Set(countryCodes);
 
-function secret(name: keyof Pick<ContactEnvironment, "TURNSTILE_SECRET" | "RESEND_API_KEY" | "RESEND_FROM" | "RESEND_TO">, env: ContactEnvironment): string {
+function secret(name: keyof Pick<ContactEnvironment, "TURNSTILE_SECRET" | "CONTACT_FROM" | "CONTACT_TO">, env: ContactEnvironment): string {
   const value = env[name]?.trim();
   if (value) return value;
   throw new Error(`Missing runtime secret: ${name}`);
@@ -92,27 +92,26 @@ export const POST: APIRoute = async ({ request }) => {
     if (!name || !validCountryCodes.has(country) || !message || (email && !validEmail(email)) || !token) return Response.json({ message: "Check the highlighted fields and try again." }, { status: 400 });
     if (!(await verifyTurnstile(token, request, secret("TURNSTILE_SECRET", runtimeEnv)))) return Response.json({ message: "We could not verify your submission. Please try again." }, { status: 403 });
 
-    const apiKey = secret("RESEND_API_KEY", runtimeEnv);
-    const from = secret("RESEND_FROM", runtimeEnv);
-    const to = secret("RESEND_TO", runtimeEnv);
+    const from = secret("CONTACT_FROM", runtimeEnv);
+    const to = secret("CONTACT_TO", runtimeEnv);
     if (!validEmail(from) || !validEmail(to)) {
-      console.error("[contact] invalid Resend sender configuration", { requestId });
+      console.error("[contact] invalid Cloudflare Email Service sender configuration", { requestId });
       return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}.` }, { status: 503 });
     }
     const replyTo = email || undefined;
     const emailBody = [`New message from whoisjk.me`, ``, `Name: ${name}`, `Country: ${country}`, `Email: ${email || "Not provided"}`, `Mobile: ${mobile || "Not provided"}`, ``, message].join("\n");
-    const resend = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json", "idempotency-key": requestId, "user-agent": "whoisjk-me-contact/1.0" },
-      body: JSON.stringify({ from, to: [to], reply_to: replyTo, subject: `New message from ${name} via whoisjk.me`, text: emailBody }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!resend.ok) {
-      const details = await resend.json().catch(() => ({})) as { name?: string };
-      console.error("[contact] Resend rejected message", { requestId, status: resend.status, errorType: details.name || "unknown" });
+    try {
+      await runtimeEnv.EMAIL.send({ from, to, replyTo, subject: `New message from ${name} via whoisjk.me`, text: emailBody });
+    } catch (error) {
+      const details = error as { code?: unknown; message?: unknown };
+      console.error("[contact] Cloudflare Email Service rejected message", {
+        requestId,
+        code: typeof details?.code === "string" ? details.code : "unknown",
+        message: typeof details?.message === "string" ? details.message : "unknown",
+      });
       return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}.` }, { status: 502 });
     }
-    console.info("[contact] message accepted by Resend", { requestId });
+    console.info("[contact] message accepted by Cloudflare Email Service", { requestId });
     return Response.json({ message: "Thanks for writing. Your message was sent privately." }, { status: 200 });
   } catch (error) {
     console.error("[contact] submission failed", { requestId, errorType: error instanceof Error ? error.name : "unknown" });

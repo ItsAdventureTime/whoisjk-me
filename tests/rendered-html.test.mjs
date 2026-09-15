@@ -71,17 +71,17 @@ test("builds the personal site as a complete static document", async () => {
   assert.match(source, /const readoutNumber = section\?\.dataset\.worldIndex/);
   assert.match(source, /const readoutTitle = section\?\.dataset\.worldReadout/);
   assert.match(source, /turnstileSiteKey/);
-  assert.match(source, /Replace with the public Site Key for the `whoisjk-me` Turnstile widget/);
+  assert.match(source, /TURNSTILE_SITE_KEY/);
+  assert.doesNotMatch(source, /0x4AAAAAAEzVojpAMktzsIsI/);
   assert.match(html, /whoisjk\.me \/ a personal field guide/i);
   assert.match(source, /\/api\/contact/);
   assert.match(source, /Content-Type.*application.json/);
-  assert.doesNotMatch(source, /TURNSTILE_SECRET_VALUE|RESEND_API_KEY_VALUE/);
+  assert.doesNotMatch(source, /TURNSTILE_SECRET_VALUE/);
 
   const endpoint = await readFile(new URL("../src/pages/api/contact.ts", import.meta.url), "utf8");
   assert.match(endpoint, /siteverify/);
   assert.match(endpoint, /result\.success === true/);
-  assert.match(endpoint, /whoisjk-me-contact/);
-  assert.match(endpoint, /idempotency-key/);
+  assert.match(endpoint, /EMAIL\.send/);
   assert.match(endpoint, /requestId/);
   assert.match(endpoint, /CONTACT_RATE_LIMITER\.limit/);
   assert.match(endpoint, /cf-connecting-ip/);
@@ -90,6 +90,7 @@ test("builds the personal site as a complete static document", async () => {
   assert.match(endpoint, /result\.hostname === "whoisjk\.me"/);
   assert.match(endpoint, /subject: .*whoisjk\.me/);
   assert.match(endpoint, /application/);
+  assert.doesNotMatch(endpoint, /api\.resend\.com|RESEND_/);
   assert.doesNotMatch(endpoint, /website@iamjk\.site|hello@iamjk\.site/);
 
   const middleware = await readFile(new URL("../src/middleware.ts", import.meta.url), "utf8");
@@ -130,13 +131,21 @@ test("builds the personal site as a complete static document", async () => {
   assert.match(caddy, /path \/api\/\*/i);
   assert.match(caddy, /CDN-Cache-Control "no-store"/i);
   assert.match(caddy, /Cache-Control "private, no-store"/i);
-  assert.match(caddy, /request_body @iamjk_api/i);
+  assert.match(caddy, /request_body @whoisjk_api/i);
   assert.match(caddy, /max_size 16KB/i);
   assert.doesNotMatch(caddy, /Cache-Control "public, max-age=/i);
-  assert.doesNotMatch(caddy, /root \* \/srv\/iamjk-site|file_server/i);
+  assert.doesNotMatch(caddy, /root \* \/srv\/|file_server/i);
+  assert.match(caddy, /^whoisjk\.me \{/);
+  assert.match(caddy, /reverse_proxy whoisjk-me:4321/);
 
   const quadlet = await readFile(new URL("../deploy/iamjk-site.container.example", import.meta.url), "utf8");
   assert.match(quadlet, /DropCapability=all/);
+  assert.doesNotMatch(quadlet, /RESEND_/);
+  assert.match(quadlet, /Cloudflare Workers Builds/);
+  assert.match(quadlet, /ContainerName=whoisjk-me/);
+
+  const deployConfig = await readFile(new URL("../deploy/iamjk-site.local.conf.example", import.meta.url), "utf8");
+  assert.doesNotMatch(`${caddy}\n${quadlet}\n${deployConfig}`, /iamjk[.-]site|@iamjk_api/);
 
   const deployment = await readFile(new URL("../scripts/deploy-vps.sh", import.meta.url), "utf8");
   assert.match(deployment, /VPS deployment is retired: this project now deploys to Cloudflare Workers/);
