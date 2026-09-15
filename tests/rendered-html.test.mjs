@@ -1,6 +1,63 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
+import { stripTypeScriptTypes } from "node:module";
+
+test("contact delivery handles configuration, optional reply addresses, and diagnostics", async () => {
+  const source = await readFile(new URL("../src/pages/api/contact.ts", import.meta.url), "utf8");
+  const outputText = stripTypeScriptTypes(source)
+    .replace(/^import .*;$/gm, "")
+    .replace(/export const /g, "const ");
+  const sent = [];
+  const logs = [];
+  const env = {
+    CONTACT_RATE_LIMITER: { limit: async () => ({ success: true }) },
+    EMAIL: { send: async (payload) => sent.push(payload) },
+  };
+  const exports = {};
+  const processEnv = { TURNSTILE_SECRET: "test-secret", CONTACT_FROM: "sender@example.com", CONTACT_TO: "inbox@example.com" };
+  runInNewContext(`${outputText}\nexports.POST = POST;`, {
+    exports, env, countryCodes: ["PH"], Response, TextDecoder, AbortSignal, crypto,
+    process: { env: processEnv },
+    console: { error: (...args) => logs.push(args), info: () => {} },
+    fetch: async (_url, options) => {
+      assert.equal(JSON.parse(options.body).secret, env.TURNSTILE_SECRET || processEnv.TURNSTILE_SECRET);
+      return Response.json({ success: true });
+    },
+  });
+  const submit = (email = "") => exports.POST({ request: new Request("https://whoisjk.me/api/contact", {
+    method: "POST", headers: { origin: "https://whoisjk.me", "content-type": "application/json" },
+    body: JSON.stringify({ name: "Visitor", country: "PH", message: "Hello", email, "cf-turnstile-response": "test-token" }),
+  }) });
+  assert.equal((await submit()).status, 200);
+  assert.equal(Object.hasOwn(sent[0], "replyTo"), false);
+  assert.equal(sent[0].from, processEnv.CONTACT_FROM);
+  env.TURNSTILE_SECRET = "binding-secret";
+  env.CONTACT_FROM = "binding@example.com";
+  assert.equal((await submit("reply@example.com")).status, 200);
+  assert.equal(sent[1].replyTo, "reply@example.com");
+  assert.equal(sent[1].from, env.CONTACT_FROM);
+  for (const binding of [undefined, {}]) {
+    env.EMAIL = binding;
+    assert.equal((await submit()).status, 503);
+    assert.equal(logs.at(-1)[0], "[contact] missing or unconfigured EMAIL binding");
+    assert.ok(logs.at(-1)[1].requestId);
+  }
+  env.EMAIL = { send: async () => { throw "delivery rejected"; } };
+  assert.equal((await submit()).status, 502);
+  assert.equal(logs.at(-1)[1].message, "delivery rejected");
+  assert.equal(logs.at(-1)[1].details, "delivery rejected");
+  delete processEnv.CONTACT_TO;
+  const response = await submit();
+  assert.equal(response.status, 503);
+  const diagnostic = logs.at(-1)[1];
+  assert.equal(diagnostic.message, "Missing runtime secret: CONTACT_TO");
+  assert.match(diagnostic.stack, /Missing runtime secret/);
+  assert.equal(diagnostic.details.message, diagnostic.message);
+  assert.ok(diagnostic.requestId);
+  assert.doesNotMatch(await response.text(), /CONTACT_TO|test-secret/);
+});
 
 test("builds the personal site as a complete static document", async () => {
   const html = await readFile(new URL("../dist/client/index.html", import.meta.url), "utf8");
@@ -82,6 +139,10 @@ test("builds the personal site as a complete static document", async () => {
   assert.match(endpoint, /siteverify/);
   assert.match(endpoint, /result\.success === true/);
   assert.match(endpoint, /EMAIL\.send/);
+  assert.match(endpoint, /!runtimeEnv\.EMAIL \|\| typeof runtimeEnv\.EMAIL\.send !== "function"/);
+  assert.doesNotMatch(endpoint, /replyTo:\s*undefined|const replyTo = email \|\| undefined/);
+  assert.equal((endpoint.match(/details: error/g) || []).length, 2);
+  assert.equal((endpoint.match(/stack: error instanceof Error \? error.stack/g) || []).length, 2);
   assert.match(endpoint, /requestId/);
   assert.match(endpoint, /CONTACT_RATE_LIMITER\.limit/);
   assert.match(endpoint, /cf-connecting-ip/);

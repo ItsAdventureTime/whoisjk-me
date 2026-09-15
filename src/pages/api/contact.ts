@@ -12,7 +12,7 @@ const MIN_COMPLETION_MS = 1_200;
 const validCountryCodes = new Set(countryCodes);
 
 function secret(name: keyof Pick<ContactEnvironment, "TURNSTILE_SECRET" | "CONTACT_FROM" | "CONTACT_TO">, env: ContactEnvironment): string {
-  const value = env[name]?.trim();
+  const value = env[name]?.trim() || (typeof process !== "undefined" ? process.env?.[name]?.trim() : undefined);
   if (value) return value;
   throw new Error(`Missing runtime secret: ${name}`);
 }
@@ -98,23 +98,34 @@ export const POST: APIRoute = async ({ request }) => {
       console.error("[contact] invalid Cloudflare Email Service sender configuration", { requestId });
       return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}.` }, { status: 503 });
     }
-    const replyTo = email || undefined;
+    if (!runtimeEnv.EMAIL || typeof runtimeEnv.EMAIL.send !== "function") {
+      console.error("[contact] missing or unconfigured EMAIL binding", { requestId });
+      return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}.` }, { status: 503 });
+    }
     const emailBody = [`New message from whoisjk.me`, ``, `Name: ${name}`, `Country: ${country}`, `Email: ${email || "Not provided"}`, `Mobile: ${mobile || "Not provided"}`, ``, message].join("\n");
     try {
-      await runtimeEnv.EMAIL.send({ from, to, replyTo, subject: `New message from ${name} via whoisjk.me`, text: emailBody });
+      await runtimeEnv.EMAIL.send({ from, to, ...(email ? { replyTo: email } : {}), subject: `New message from ${name} via whoisjk.me`, text: emailBody });
     } catch (error) {
       const details = error as { code?: unknown; message?: unknown };
       console.error("[contact] Cloudflare Email Service rejected message", {
         requestId,
         code: typeof details?.code === "string" ? details.code : "unknown",
-        message: typeof details?.message === "string" ? details.message : "unknown",
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        details: error,
       });
       return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}.` }, { status: 502 });
     }
     console.info("[contact] message accepted by Cloudflare Email Service", { requestId });
     return Response.json({ message: "Thanks for writing. Your message was sent privately." }, { status: 200 });
   } catch (error) {
-    console.error("[contact] submission failed", { requestId, errorType: error instanceof Error ? error.name : "unknown" });
+    console.error("[contact] submission failed", {
+      requestId,
+      errorType: error instanceof Error ? error.name : "unknown",
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      details: error,
+    });
     return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}.` }, { status: 503 });
   }
 };
