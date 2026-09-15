@@ -69,12 +69,20 @@ test("contact delivery handles configuration, optional reply addresses, and diag
   assert.doesNotMatch(await response.text(), /CONTACT_TO|test-secret/);
 });
 
-test("Turnstile ready clears loading and waiting status", async () => {
+test("Turnstile ready clears pending status and preserves submission outcomes", async () => {
   const source = await readFile(new URL("../src/pages/index.astro", import.meta.url), "utf8");
   const listener = source.match(/document\.addEventListener\("iamjk:turnstile-ready", \(\) => \{[\s\S]*?\n\s*\}\);/);
   assert.ok(listener);
-  for (const message of ["Loading secure check…", "Secure check is still loading. Please wait a moment.", "Complete the secure check before sending."]) {
-    const contactStatus = { textContent: message, className: "contact-status is-pending" };
+  for (const [status, message] of [
+    ["is-pending", "Loading secure check…"],
+    ["is-pending", "Secure check is still loading. Please wait a moment."],
+    ["is-pending", "Complete the secure check before sending."],
+    ["is-success", "Thanks. Your message is on its way."],
+    ["is-error", "I couldn’t send your message. Reference 263c5a7c."],
+    ["is-error", "We could not verify your submission. Please try again."],
+  ]) {
+    const contactStatus = { textContent: message, className: `contact-status ${status}` };
+    contactStatus.classList = { contains: (name) => contactStatus.className.split(/\s+/).includes(name) };
     let state = "loading";
     const document = new EventTarget();
     runInNewContext(listener[0], {
@@ -87,8 +95,8 @@ test("Turnstile ready clears loading and waiting status", async () => {
     });
     document.dispatchEvent(new Event("iamjk:turnstile-ready"));
     assert.equal(state, "ready");
-    assert.equal(contactStatus.textContent, "");
-    assert.equal(contactStatus.className.trim(), "contact-status");
+    assert.equal(contactStatus.textContent, status === "is-pending" ? "" : message);
+    assert.equal(contactStatus.className.trim(), status === "is-pending" ? "contact-status" : `contact-status ${status}`);
   }
 });
 

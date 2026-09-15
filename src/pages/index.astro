@@ -425,7 +425,9 @@ const pageDescription = "A personal field guide to JK de Guzman, covering faith,
       };
       document.addEventListener("iamjk:turnstile-ready", () => {
         setTurnstileState("ready");
-        announceContactStatus("", "");
+        if (contactStatus?.classList.contains("is-pending")) {
+          announceContactStatus("", "");
+        }
       });
       document.addEventListener("iamjk:turnstile-expired", () => {
         setTurnstileState("expired", "Secure check expired. Complete it again to send your message.");
