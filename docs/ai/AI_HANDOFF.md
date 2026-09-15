@@ -14,7 +14,7 @@ FRONTIER and IMPLEMENTER are roles, not specific models or products.
 # Operator Control
 
 - Active task: `T-003`
-- Contract revision: `3`
+- Contract revision: `4`
 - Status: `READY_FOR_FRONTIER_REVIEW`
 - Next role: `FRONTIER`
 - Next phase: `PHASE_1`
@@ -22,7 +22,7 @@ FRONTIER and IMPLEMENTER are roles, not specific models or products.
 - Completion state: `NOT_COMPLETE`
 - Human validation required: `YES`
 - Last verified branch: `main`
-- Last verified HEAD: `68a43c1d39857901da83d270d19f3e03c1da667e` (verified implementation commit; final handoff metadata follows in a separate commit)
+- Last verified HEAD: `220f8475c4c123fc191217fbd8f6c277477dc685` (verified and pushed implementation; boundary documentation follows in a separate commit)
 
 > HUMAN:
 >
@@ -248,6 +248,12 @@ Current evidence:
 - Independent FRONTIER re-verification in Docker Sandbox: `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check` passed with 0 errors, 0 warnings, 0 hints; `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test` passed with 1 test, 0 failures; `git diff --check` passed cleanly.
 - FRONTIER blocker diagnosis: `src/pages/index.astro` static prerendering (`export const prerender = true;`) must be preserved for edge CDN delivery and zero Worker compute overhead on the root document. Turnstile keys must not be committed to Git or `wrangler.jsonc`.
 - Blocker resolution: Human must configure `TURNSTILE_SITE_KEY` under `Settings` → `Builds` → `Build variables and secrets` in the Cloudflare dashboard before production build runs on `origin main`.
+- Human validation on `https://whoisjk.me` reported FAIL: contact form submission failed with client-facing error `"I couldn’t send your message. Reference 5b76f7cb."`.
+- Live curl inspection of `https://whoisjk.me` verified that `class="cf-turnstile" data-sitekey="0x4AAAAAAEzVojpAMktzsIsI"` rendered as expected from the configured build variable, confirming the Turnstile widget loaded and challenge completed.
+- Reference code `5b76f7cb` matches `requestId.slice(0, 8)` in `src/pages/api/contact.ts`.
+- Analysis of `src/pages/api/contact.ts` revealed that configuration errors (missing secret, invalid email), Email Service rejection, and unhandled runtime exceptions return the identical generic error message to the client, while console error logging in the outer catch omitted `error.message`, `error.stack`, and full diagnostic details.
+- Analysis identified that passing `replyTo: undefined` when no email is provided may violate native binding parameter constraints in workerd, and resolving runtime variables solely from `env[name]` lacks fallback to `process.env[name]`.
+- Cloudflare Email Service requires `CONTACT_FROM` to match the onboarded sending domain (`notify.whoisjk.me`).
 
 # Frontier Decision
 
@@ -260,6 +266,12 @@ Status:
 - **Purge `iamjk.site` References (Contract Revision 2)**: Replace all occurrences of `iamjk.site` and container references `iamjk-site` with `whoisjk.me` / `whoisjk-me` in deploy templates, documentation, and tests.
 - **Resolve Workers Builds Key Blocker (Contract Revision 3)**: Preserve static prerendering of `index.astro`. Direct the HUMAN to configure `TURNSTILE_SITE_KEY` under **Settings** → **Builds** → **Build variables and secrets** in the Cloudflare dashboard.
 - **Execute Verification, Commit, and Push via IMPLEMENTER (Contract Revision 3)**: Bounded Phase 2 contract assigned to IMPLEMENTER to re-run verification in Docker Sandbox, stage and commit the verified changeset, push to `origin main`, and transition handoff to `READY_FOR_HUMAN_VALIDATION`.
+- **Harden Contact Delivery & Observability (Contract Revision 4)**: Classify Human Validation FAIL as `IN_SCOPE_DEFECT`. Live Turnstile challenge passed, but contact message dispatch failed in production with reference `5b76f7cb`. Issue Contract Revision 4 for IMPLEMENTER to harden `src/pages/api/contact.ts`:
+  1. Fallback secret/variable lookup: check `env[name] || (typeof process !== "undefined" && process.env?.[name])`.
+  2. Defensive binding verification: verify `runtimeEnv.EMAIL && typeof runtimeEnv.EMAIL.send === "function"` before attempting send, returning a logged 503 if unconfigured.
+  3. Strict parameter payload: omit `replyTo` completely if no email is provided (avoid passing `undefined` to native binding).
+  4. Rich diagnostic logging: log `error.message`, `error.stack`, and full serialized error details with `requestId` in both inner and outer catch blocks so that Cloudflare Observability retains complete diagnostic details.
+  5. Update tests, verify in Docker Sandbox, commit, and push to `origin main`.
 
 ---
 
@@ -332,6 +344,15 @@ Status:
      ```
    - **Status Verification**: Confirm `git status --porcelain` is clean.
    - **Handoff**: Transition handoff state to `READY_FOR_HUMAN_VALIDATION`.
+10. Harden Contact Delivery API and Diagnostic Observability (Contract Revision 4):
+    - **Defensive secret/variable lookup**: Update `secret()` in `src/pages/api/contact.ts` to look up `env[name] || (typeof process !== "undefined" && process.env?.[name])?.trim()`.
+    - **Binding guard**: Check that `runtimeEnv.EMAIL && typeof runtimeEnv.EMAIL.send === "function"`. If false, log `[contact] missing or unconfigured EMAIL binding` with `requestId` and return 503.
+    - **Strict parameter sanitization**: Construct the message payload without passing `replyTo: undefined`. Only include `replyTo` if `email` is present and valid.
+    - **Full diagnostic logging**: In both inner catch (`Cloudflare Email Service rejected message`) and outer catch (`submission failed`), log `message: error instanceof Error ? error.message : String(error)`, `stack: error instanceof Error ? error.stack : undefined`, `details: error`, and `requestId`.
+    - **Regression assertions**: Update `tests/rendered-html.test.mjs` to assert defensive `EMAIL` check, absence of `replyTo: undefined`, and rich diagnostic logging.
+    - **Verification**: Run `pnpm run check`, `pnpm test`, and `git diff --check` in Docker Sandbox.
+    - **Stage, Commit, and Push**: Commit verified changes on `main` and push to `origin main` on GitHub.
+    - **Handoff**: Transition handoff state to `READY_FOR_FRONTIER_REVIEW`.
 
 ## Relevant Components
 
@@ -378,6 +399,10 @@ Status:
 - [x] `tests/rendered-html.test.mjs` updated to match new Caddy matcher and passes with 0 failures in Docker Sandbox.
 - [x] `pnpm run check` passes with 0 errors in Docker Sandbox.
 - [x] All verified changes committed and pushed to `origin main` on GitHub to trigger Cloudflare Workers Builds.
+- [x] `src/pages/api/contact.ts` guards `runtimeEnv.EMAIL` presence and omits undefined `replyTo` from payload.
+- [x] `src/pages/api/contact.ts` logs rich error diagnostics (`message`, `stack`, error object) to Cloudflare Observability.
+- [x] Revision 4 automated verification passes in Docker Sandbox.
+- [x] Hardened changeset committed and pushed to `origin main`.
 
 ---
 
@@ -422,6 +447,14 @@ Status:
 
 ## Material Changes
 
+- Revision 4: added trimmed `process.env` fallback while preferring binding values,
+  guarded missing/non-callable `EMAIL.send`, omitted absent `replyTo`, and added
+  message, stack, and original error details to both catch logs with request IDs.
+- Added one mocked endpoint regression test exercising fallback and binding
+  precedence, optional reply addresses, missing/malformed binding, delivery
+  rejection, missing configuration, and generic client error responses. Added
+  contract-required source assertions. No dependencies or architecture changed.
+
 - Added the `EMAIL` Cloudflare Email Service binding and regenerated
   `worker-configuration.d.ts`.
 - Replaced Resend delivery with `runtimeEnv.EMAIL.send(...)`; retained existing
@@ -441,6 +474,10 @@ Status:
   validation, rate limiting, CSP, and visual presentation remain unchanged.
 
 ## Files / Components Changed
+
+Revision 4 modifies only `src/pages/api/contact.ts`,
+`tests/rendered-html.test.mjs`, and this handoff. Earlier revision files below
+remain preserved.
 
 - `.dockerignore`
 - `.gitignore`
@@ -464,50 +501,57 @@ Status:
 - `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check` — PASS, 0 errors, 0 warnings, 0 hints.
 - `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test` — PASS, build completed; 1 test, 0 failures.
 - `git diff --check` — PASS.
-- `git check-ignore .iamjk-site-release.tar .whoisjk-me-release.tar` — PASS, both ignored.
-- Final implementation diff inspected; prior correct work preserved.
-- Generated HTML inspection — empty `data-sitekey` confirmed. Existing automated
-  assertions do not validate a populated site key.
-- Cloudflare settings/build-trigger reads — PASS; runtime key exists, build
-  variables absent. No remote configuration was changed.
-- Implementation committed as `68a43c1d39857901da83d270d19f3e03c1da667e`.
-- `git push origin main` — PASS; verified implementation and handoff commits pushed.
-- `git status --porcelain` — PASS; clean after commit and push.
+- Revision 4 focused Docker Sandbox test — confirmed failure before handler changes
+  (503 instead of 200 with process-only configuration), then PASS after changes.
+- Revision 4 full `pnpm test` — PASS, build completed; 2 tests, 0 failures.
+- Initial test harness attempt could not resolve TypeScript in the isolated
+  runtime; replaced it with Node's built-in `stripTypeScriptTypes`, with no new
+  dependency. Node emits an experimental-feature warning for that API.
+- Final source/test diff inspected; existing handoff changes and prior correct
+  implementation preserved. No new credential values recorded.
+- Implementation committed as `220f8475c4c123fc191217fbd8f6c277477dc685`.
+- `git push origin main` — PASS for the verified implementation.
+- SSH signing failed because its agent socket was unavailable; used a per-command
+  `commit.gpgSign=false` override without changing repository configuration.
+- At the implementation push boundary, only this handoff remains modified;
+  its documentation commit/push and final clean-status check follow this write.
 
 ## Result
 
-`READY_FOR_FRONTIER_REVIEW` — the revision 3 contract is implemented, freshly
+`READY_FOR_FRONTIER_REVIEW` — the revision 4 contract is implemented, freshly
 verified, committed, and pushed to `origin main`.
 
 ## Remaining Uncertainty
 
-- The existing test checks source configuration but passes with an empty rendered
-  site key when the local build environment does not define one. Production
-  injection of the HUMAN-configured build variable remains part of live validation.
-- Live Turnstile interaction and actual email receipt have not been validated.
-- The automatic Cloudflare build/deploy result has not been independently reviewed.
+- The exact production cause behind reference `5b76f7cb` remains unproven.
+  Defensive changes and mocked tests do not establish live Email Service delivery.
+- Cloudflare Workers Builds deployment and actual inbox receipt after revision 4
+  have not been validated. Existing HUMAN validation remains FAIL pending retest.
+- Original error objects are now logged as the contract requests; production log
+  serialization and provider error contents still require review in Observability.
 
 ## Human Validation Recommendations
 
-- Keep HUMAN validation `NOT_RUN`. After FRONTIER independently reviews the pushed
-  implementation, confirm Workers Builds deployment success, the live Turnstile
-  widget, contact-form feedback, and receipt of mail from the verified
-  `notify.whoisjk.me` domain in the configured inbox.
+- Preserve the recorded HUMAN validation FAIL. After FRONTIER review, validate
+  deployment success, submit with and without an optional email address, and
+  confirm contact feedback and inbox receipt from `notify.whoisjk.me`.
+- If delivery still fails, correlate the client reference with the logged request
+  ID and inspect the new diagnostics in Cloudflare Observability.
 
 ---
 
 # Frontier Review
 
-The acceptance below applies to the earlier implementation revision. Revision 2
-now requires FRONTIER blocker resolution and subsequent independent review.
+The findings below issued revision 4. Independent review of the new implementation
+is pending; IMPLEMENTER has not accepted its own changes.
 
 Status:
 
-`ACCEPTED_PENDING_HUMAN_VALIDATION`
+`CHANGES_REQUESTED`
 
 ## Decision
 
-`ACCEPTED_PENDING_HUMAN_VALIDATION`
+`CHANGES_REQUESTED`
 
 Allowed decisions:
 
@@ -518,24 +562,21 @@ Allowed decisions:
 
 ## Findings
 
-- Verified all 11 modified implementation and documentation files:
-  - `wrangler.jsonc`: declared `EMAIL` binding (`send_email`).
-  - `worker-configuration.d.ts` and `src/env.d.ts`: accurate typings for `EMAIL` (`SendEmail`), `CONTACT_RATE_LIMITER`, and dashboard variables/secrets (`TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET`, `CONTACT_FROM`, `CONTACT_TO`).
-  - `src/pages/api/contact.ts`: dispatches messages via `runtimeEnv.EMAIL.send(...)`; rate limiting, Turnstile verification, and input validation preserved; all Resend references removed.
-  - `src/pages/index.astro`: retrieves Turnstile site key from `process.env.TURNSTILE_SITE_KEY || import.meta.env.PUBLIC_TURNSTILE_SITE_KEY || ""`; hardcoded site key removed.
-  - `tests/rendered-html.test.mjs`: regression tests assert new Cloudflare Email Service binding, dynamic Turnstile site key, and absence of Resend keys/endpoints.
-  - Documentation (`CLOUDFLARE_WORKERS_DEPLOYMENT.md`, `README.md`, `SECURITY.md`, `RELEASE_WORKFLOW.md`, `deploy/iamjk-site.container.example`): audited and aligned with Cloudflare Email Service and dashboard-managed Turnstile configuration.
-- Local verification executed independently in Docker Sandbox:
-  - `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check` — PASS, 0 errors, 0 warnings.
-  - `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test` — PASS, 0 failures.
-  - `git diff --check` — PASS (clean).
-- Implementation accepted pending Human Validation. Changes are preserved uncommitted in the local tree to respect the safety boundary before human commit/push to `main` and production deployment.
+- Triaged Human Validation FAIL report from production on `https://whoisjk.me`.
+- Confirmed Turnstile widget rendered with dashboard build variable (`0x4AAAAAAEzVojpAMktzsIsI`) and challenge passed.
+- Production error `"I couldn’t send your message. Reference 5b76f7cb."` matches `requestId` prefix in `src/pages/api/contact.ts`.
+- Identified implementation defects in `src/pages/api/contact.ts`:
+  1. Passing `replyTo: undefined` when visitor provides no email (violating workerd native binding parameter expectations).
+  2. Resolving secrets/variables only through `env[name]` without `process.env` fallback under `nodejs_compat`.
+  3. Lack of explicit presence guard on `runtimeEnv.EMAIL` before calling `.send()`.
+  4. Opaque error logging in catch blocks discarding `error.message`, `error.stack`, and nested causes, preventing full diagnostic visibility in Cloudflare Observability logs.
+- Contract Revision 4 issued to IMPLEMENTER to apply endpoint hardening, update test assertions, verify in Docker Sandbox, commit, and push to `origin main`.
 
 # Human Validation
 
 Status:
 
-`NOT_RUN`
+`FAIL`
 
 Allowed values:
 
@@ -546,25 +587,27 @@ Allowed values:
 
 ## Observed Result
 
-- Human configured runtime variables/secrets in Cloudflare dashboard (`TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET`, `CONTACT_FROM`, `CONTACT_TO`) and deleted obsolete Resend references.
+- Live contact form submission on `https://whoisjk.me` produced client-facing error: `"I couldn’t send your message. Reference 5b76f7cb."`.
+- Turnstile challenge completed successfully with configured site key `0x4AAAAAAEzVojpAMktzsIsI`.
 
 ## Expected Result
 
-- Live Turnstile widget loads via dashboard-configured `TURNSTILE_SITE_KEY`, and contact form submissions sent from `notify.whoisjk.me` arrive at `CONTACT_TO` inbox after deployment to `https://whoisjk.me`.
+- Contact message submitted via `https://whoisjk.me` is accepted and sends notification email to `CONTACT_TO` inbox from `notify.whoisjk.me`.
 
 ## Reproduction / Environment
 
-- Cloudflare Dashboard and live browser visit to `https://whoisjk.me`.
+- Live browser visit to `https://whoisjk.me`, filling out contact form, completing Turnstile challenge, and clicking Send.
 
 ## Evidence
 
-- Human feedback received: dashboard variables configured; new requirement submitted to replace all `iamjk.site` references with `whoisjk.me` across workspace documents, and commit/push to remote Git.
+- Error message: `"I couldn’t send your message. Reference 5b76f7cb."`.
+- Reference code `5b76f7cb` matches `requestId` prefix generated in `src/pages/api/contact.ts`.
 
 # Human Feedback
 
 Status:
 
-`CHANGED_REQUIREMENT`
+`IN_SCOPE_DEFECT`
 
 Allowed classifications:
 
@@ -576,12 +619,14 @@ Allowed classifications:
 
 ## Analysis
 
-- Classify as `CHANGED_REQUIREMENT`.
-- Human confirmed dashboard variables/secrets were configured in Cloudflare Workers.
-- Human added explicit requirements:
-  1. Replace all remaining references to `iamjk.site` (and `iamjk-site` where appropriate) with `whoisjk.me` / `whoisjk-me` across workspace documents, deploy templates, and security guides.
-  2. Stage, commit, and push the verified changeset to `main` on GitHub remote `https://github.com/ItsAdventureTime/whoisjk-me` to trigger Cloudflare Workers Builds.
-- Frontier incremented Contract revision to `2`, updated Objective, Scope, Implementation Contract, and Acceptance Criteria. Status transitioned to `READY_FOR_IMPLEMENTER`.
+- Classify as `IN_SCOPE_DEFECT`.
+- Human validation confirmed the Turnstile widget loads and validates, but contact message delivery rejected during `POST /api/contact` execution in production.
+- Analysis identified implementation deficiencies in `src/pages/api/contact.ts`:
+  1. Opaque error logging: The outer catch block logs only `{ requestId, errorType }`, discarding `error.message` and `error.stack`, while the inner catch assumes a flat `{ code, message }` structure and defaults to `"unknown"`.
+  2. Strict parameter constraints: Passing `{ replyTo: undefined }` when no email is provided can trigger binding validation failures in workerd.
+  3. Environment lookup: `secret()` only accesses `env[name]` without checking `process.env[name]`, which can fail for environment variables under `nodejs_compat`.
+  4. Binding availability: No guard verifies `runtimeEnv.EMAIL && typeof runtimeEnv.EMAIL.send === "function"`.
+- Contract Revision 4 issued to harden `src/pages/api/contact.ts`, ensure complete diagnostic visibility in Cloudflare Observability logs, verify in Docker Sandbox, commit, and push to `origin main`.
 
 ---
 
@@ -602,7 +647,7 @@ Status:
 
 - Role: `FRONTIER`
 - Phase: `PHASE_1`
-- Action: Independently review contract revision 3, the pushed implementation, and fresh verification evidence; then decide whether to request changes or advance to HUMAN validation.
+- Action: Independently review revision 4, the pushed implementation, and verification evidence; decide whether to request changes or advance to a new HUMAN validation attempt.
 - Human action: Run PHASE 1 with a FRONTIER for independent review.
 
 ---
@@ -612,12 +657,12 @@ Status:
 The active task may be marked `DONE` only when all applicable conditions
 are satisfied:
 
-- [x] Acceptance Criteria satisfied.
+- [ ] Acceptance Criteria satisfied.
 - [x] Required automated verification passed.
 - [ ] FRONTIER independent review accepted.
 - [ ] Required HUMAN validation passed or is explicitly `NOT_REQUIRED`.
 - [x] No unresolved blocker remains.
-- [x] No known unresolved in-scope defect remains.
+- [ ] No known unresolved in-scope defect remains.
 
 When complete, Operator Control MUST say:
 
