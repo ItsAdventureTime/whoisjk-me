@@ -14,7 +14,7 @@ FRONTIER and IMPLEMENTER are roles, not specific models or products.
 # Operator Control
 
 - Active task: `T-003`
-- Contract revision: `4`
+- Contract revision: `5`
 - Status: `READY_FOR_FRONTIER_REVIEW`
 - Next role: `FRONTIER`
 - Next phase: `PHASE_1`
@@ -22,7 +22,7 @@ FRONTIER and IMPLEMENTER are roles, not specific models or products.
 - Completion state: `NOT_COMPLETE`
 - Human validation required: `YES`
 - Last verified branch: `main`
-- Last verified HEAD: `220f8475c4c123fc191217fbd8f6c277477dc685` (verified and pushed implementation; boundary documentation follows in a separate commit)
+- Last verified HEAD: `b8c5701482ba772078db42b8abbd5b6ea45c49d7` (verified and pushed implementation; this boundary documentation follows in a separate commit)
 
 > HUMAN:
 >
@@ -272,6 +272,12 @@ Status:
   3. Strict parameter payload: omit `replyTo` completely if no email is provided (avoid passing `undefined` to native binding).
   4. Rich diagnostic logging: log `error.message`, `error.stack`, and full serialized error details with `requestId` in both inner and outer catch blocks so that Cloudflare Observability retains complete diagnostic details.
   5. Update tests, verify in Docker Sandbox, commit, and push to `origin main`.
+- **Fix Turnstile Status Display & Sender Domain Validation (Contract Revision 5)**: Classify Human Validation FAIL as `IN_SCOPE_DEFECT`.
+  1. Frontend Turnstile UI state: In `src/pages/index.astro`, fix `iamjk:turnstile-ready` event handler to clear status when in `loading` or waiting state. The previous check `contactStatus?.textContent?.startsWith("Secure check")` missed initial message `"Loading secure check…"`, leaving a stuck loading message below the Turnstile widget.
+  2. Turnstile Managed Mode clarification: In Cloudflare Turnstile, Managed mode dynamically assesses risk and completes automatically without requiring an interactive checkbox for low-risk human visitors (expected behavior).
+  3. Sender domain guard: In `src/pages/api/contact.ts`, validate that `CONTACT_FROM` ends with `@notify.whoisjk.me` (or verified sending domain), logging a descriptive configuration error if mismatched.
+  4. Correlate Observability logs: Human inspects Cloudflare Observability logs for `requestId: 263c5a7c` to verify the provider error returned during production delivery failure.
+  5. Update tests, verify in Docker Sandbox, commit, and push to `origin main`.
 
 ---
 
@@ -353,6 +359,13 @@ Status:
     - **Verification**: Run `pnpm run check`, `pnpm test`, and `git diff --check` in Docker Sandbox.
     - **Stage, Commit, and Push**: Commit verified changes on `main` and push to `origin main` on GitHub.
     - **Handoff**: Transition handoff state to `READY_FOR_FRONTIER_REVIEW`.
+11. Fix Turnstile Ready Status Clearing and Validate Sender Domain (Contract Revision 5):
+    - **Fix Turnstile ready status clearing**: In `src/pages/index.astro`, update the `iamjk:turnstile-ready` event listener so that it clears any loading or waiting status unconditionally via `announceContactStatus("", "")` when transitioning to `"ready"`. This prevents `"Loading secure check…"` from getting stuck when Turnstile completes automatically.
+    - **Sender domain validation**: In `src/pages/api/contact.ts`, validate that `from.toLowerCase().endsWith("@notify.whoisjk.me")`. If not, log `[contact] invalid sender domain: CONTACT_FROM must end with @notify.whoisjk.me` with `requestId` and return 503.
+    - **Update tests**: In `tests/rendered-html.test.mjs`, add tests verifying that `index.astro` clears status on ready and `contact.ts` validates that the sender domain matches `@notify.whoisjk.me`.
+    - **Verification**: Run `pnpm run check`, `pnpm test`, and `git diff --check` in Docker Sandbox.
+    - **Stage, Commit, and Push**: Commit verified changes on `main` and push to `origin main` on GitHub.
+    - **Handoff**: Transition handoff state to `READY_FOR_FRONTIER_REVIEW`.
 
 ## Relevant Components
 
@@ -403,6 +416,8 @@ Status:
 - [x] `src/pages/api/contact.ts` logs rich error diagnostics (`message`, `stack`, error object) to Cloudflare Observability.
 - [x] Revision 4 automated verification passes in Docker Sandbox.
 - [x] Hardened changeset committed and pushed to `origin main`.
+- [x] Revision 5 clears Turnstile status on ready and rejects sender domains other than `notify.whoisjk.me` with a logged 503.
+- [x] Revision 5 regression tests and required verification pass; implementation committed and pushed.
 
 ---
 
@@ -447,6 +462,14 @@ Status:
 
 ## Material Changes
 
+- Revision 5: cleared status unconditionally in the Turnstile ready listener as
+  contracted; added case-insensitive exact sender-domain validation after existing
+  email syntax validation and before delivery. Invalid domains receive a generic
+  503 response and a descriptive server log with request ID.
+- Extended the existing endpoint test for allowed uppercase domains, disallowed
+  domains/subdomains/suffix lookalikes, no send on rejection, and generic responses.
+  Added an event-driven regression for initial loading and waiting messages.
+
 - Revision 4: added trimmed `process.env` fallback while preferring binding values,
   guarded missing/non-callable `EMAIL.send`, omitted absent `replyTo`, and added
   message, stack, and original error details to both catch logs with request IDs.
@@ -475,7 +498,7 @@ Status:
 
 ## Files / Components Changed
 
-Revision 4 modifies only `src/pages/api/contact.ts`,
+Revision 5 modifies only `src/pages/index.astro`, `src/pages/api/contact.ts`,
 `tests/rendered-html.test.mjs`, and this handoff. Earlier revision files below
 remain preserved.
 
@@ -498,6 +521,22 @@ remain preserved.
 
 ## Verification Executed
 
+- Revision 5 focused Docker Sandbox tests: both failed before the fixes (invalid
+  domain returned 200; loading text remained), then both passed after the fixes.
+- Revision 5 `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check`
+  — PASS: generated types current, 0 errors, 0 warnings, 0 hints.
+- Revision 5 `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test`
+  — PASS: static build completed, 3 tests passed, 0 failures.
+- Revision 5 `git diff --check` and staged whitespace check — PASS; final source
+  and test diff inspected. Existing uncommitted FRONTIER handoff work preserved.
+- Revision 5 implementation committed and pushed as
+  `b8c5701482ba772078db42b8abbd5b6ea45c49d7`; commit signing disabled per command
+  using the established workflow. No repository signing setting changed.
+- At this boundary, only this handoff remains modified. Its commit/push and final
+  clean-status verification follow this single handoff write.
+
+Earlier revision evidence:
+
 - `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check` — PASS, 0 errors, 0 warnings, 0 hints.
 - `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test` — PASS, build completed; 1 test, 0 failures.
 - `git diff --check` — PASS.
@@ -518,11 +557,19 @@ remain preserved.
 
 ## Result
 
-`READY_FOR_FRONTIER_REVIEW` — the revision 4 contract is implemented, freshly
+`READY_FOR_FRONTIER_REVIEW` — the revision 5 contract is implemented, freshly
 verified, committed, and pushed to `origin main`.
 
 ## Remaining Uncertainty
 
+- Production reference `263c5a7c` has not been correlated with Observability logs
+  during this invocation. The sender guard does not prove the cause or resolution
+  of the production delivery failure. Deployment and inbox receipt remain unverified.
+- Per the explicit contract, every ready event clears status, including after a
+  post-submission widget reset; HUMAN should assess feedback visibility in that flow.
+- The Turnstile regression executes the listener with DOM stand-ins, not a live
+  browser or provider challenge. Existing Node `stripTypeScriptTypes` experimental
+  warning remains; no dependencies were added.
 - The exact production cause behind reference `5b76f7cb` remains unproven.
   Defensive changes and mocked tests do not establish live Email Service delivery.
 - Cloudflare Workers Builds deployment and actual inbox receipt after revision 4
@@ -532,6 +579,10 @@ verified, committed, and pushed to `origin main`.
 
 ## Human Validation Recommendations
 
+- After independent review, confirm initial loading/waiting text clears when
+  Turnstile succeeds, and assess message visibility after submission/reset.
+  Inspect Observability for the full request ID beginning `263c5a7c` to identify
+  the provider rejection. Keep HUMAN validation FAIL until a successful retest.
 - Preserve the recorded HUMAN validation FAIL. After FRONTIER review, validate
   deployment success, submit with and without an optional email address, and
   confirm contact feedback and inbox receipt from `notify.whoisjk.me`.
@@ -542,8 +593,7 @@ verified, committed, and pushed to `origin main`.
 
 # Frontier Review
 
-The findings below issued revision 4. Independent review of the new implementation
-is pending; IMPLEMENTER has not accepted its own changes.
+The findings below issued revision 5. Independent review of revision 5 is pending.
 
 Status:
 
@@ -563,14 +613,11 @@ Allowed decisions:
 ## Findings
 
 - Triaged Human Validation FAIL report from production on `https://whoisjk.me`.
-- Confirmed Turnstile widget rendered with dashboard build variable (`0x4AAAAAAEzVojpAMktzsIsI`) and challenge passed.
-- Production error `"I couldn’t send your message. Reference 5b76f7cb."` matches `requestId` prefix in `src/pages/api/contact.ts`.
-- Identified implementation defects in `src/pages/api/contact.ts`:
-  1. Passing `replyTo: undefined` when visitor provides no email (violating workerd native binding parameter expectations).
-  2. Resolving secrets/variables only through `env[name]` without `process.env` fallback under `nodejs_compat`.
-  3. Lack of explicit presence guard on `runtimeEnv.EMAIL` before calling `.send()`.
-  4. Opaque error logging in catch blocks discarding `error.message`, `error.stack`, and nested causes, preventing full diagnostic visibility in Cloudflare Observability logs.
-- Contract Revision 4 issued to IMPLEMENTER to apply endpoint hardening, update test assertions, verify in Docker Sandbox, commit, and push to `origin main`.
+- Evaluated two observed issues from human validation:
+  1. Frontend Turnstile UI state: In `src/pages/index.astro`, `iamjk:turnstile-ready` checked `contactStatus?.textContent?.startsWith("Secure check")`, but the initial loading message was set to `"Loading secure check…"`. Because the string did not match, the text was never cleared, leaving `"Loading secure check…"` stuck on screen even after the Turnstile widget showed `Success!`.
+  2. Turnstile Managed Mode: Clarified that Cloudflare Turnstile's Managed challenge evaluates browser signals dynamically and auto-solves without requiring an interactive click for low-risk human visitors (expected behavior).
+  3. Contact delivery failure: Live submission failed with reference `263c5a7c` (matching `requestId`). The exact provider rejection was logged to Cloudflare Observability under `requestId: 263c5a7c`. Contract Revision 5 adds explicit sender domain validation (`@notify.whoisjk.me`) in `src/pages/api/contact.ts`.
+- Contract Revision 5 issued to IMPLEMENTER to fix Turnstile status clearing, add sender domain validation, update tests, verify in Docker Sandbox, commit, and push.
 
 # Human Validation
 
@@ -587,12 +634,14 @@ Allowed values:
 
 ## Observed Result
 
-- Live contact form submission on `https://whoisjk.me` produced client-facing error: `"I couldn’t send your message. Reference 5b76f7cb."`.
-- Turnstile challenge completed successfully with configured site key `0x4AAAAAAEzVojpAMktzsIsI`.
+- Revision 4: Live contact form submission on `https://whoisjk.me` produced client-facing error: `"I couldn’t send your message. Reference 263c5a7c."`.
+- Turnstile challenge completed with green checkmark `Success!`, but `"Loading secure check…"` remained displayed underneath due to an event listener string comparison defect in `index.astro`.
+- Human visitor observed the automatic check and noted an interactive tap/checkbox was expected.
 
 ## Expected Result
 
 - Contact message submitted via `https://whoisjk.me` is accepted and sends notification email to `CONTACT_TO` inbox from `notify.whoisjk.me`.
+- Turnstile challenge status clears cleanly upon completion.
 
 ## Reproduction / Environment
 
@@ -600,8 +649,8 @@ Allowed values:
 
 ## Evidence
 
-- Error message: `"I couldn’t send your message. Reference 5b76f7cb."`.
-- Reference code `5b76f7cb` matches `requestId` prefix generated in `src/pages/api/contact.ts`.
+- Error message: `"I couldn’t send your message. Reference 263c5a7c."`.
+- Uploaded screenshots demonstrating Turnstile showing `Success!` while `"Loading secure check…"` persisted below it.
 
 # Human Feedback
 
@@ -620,13 +669,9 @@ Allowed classifications:
 ## Analysis
 
 - Classify as `IN_SCOPE_DEFECT`.
-- Human validation confirmed the Turnstile widget loads and validates, but contact message delivery rejected during `POST /api/contact` execution in production.
-- Analysis identified implementation deficiencies in `src/pages/api/contact.ts`:
-  1. Opaque error logging: The outer catch block logs only `{ requestId, errorType }`, discarding `error.message` and `error.stack`, while the inner catch assumes a flat `{ code, message }` structure and defaults to `"unknown"`.
-  2. Strict parameter constraints: Passing `{ replyTo: undefined }` when no email is provided can trigger binding validation failures in workerd.
-  3. Environment lookup: `secret()` only accesses `env[name]` without checking `process.env[name]`, which can fail for environment variables under `nodejs_compat`.
-  4. Binding availability: No guard verifies `runtimeEnv.EMAIL && typeof runtimeEnv.EMAIL.send === "function"`.
-- Contract Revision 4 issued to harden `src/pages/api/contact.ts`, ensure complete diagnostic visibility in Cloudflare Observability logs, verify in Docker Sandbox, commit, and push to `origin main`.
+- Bug 1: `src/pages/index.astro` failed to clear `"Loading secure check…"` upon `iamjk:turnstile-ready` because the check tested `startsWith("Secure check")` instead of checking for `loading` or clearing unconditionally when transitioning to `"ready"`.
+- Bug 2: Production contact delivery failed with reference `263c5a7c`. Contract Revision 5 adds explicit validation that `CONTACT_FROM` matches `@notify.whoisjk.me` and directs inspection of Observability logs.
+- Turnstile note: In Managed mode, Cloudflare decides when to require an interactive checkbox based on risk score. For trusted human visitors, Turnstile completes automatically without a click.
 
 ---
 
@@ -647,7 +692,7 @@ Status:
 
 - Role: `FRONTIER`
 - Phase: `PHASE_1`
-- Action: Independently review revision 4, the pushed implementation, and verification evidence; decide whether to request changes or advance to a new HUMAN validation attempt.
+- Action: Independently review revision 5, its pushed implementation and verification evidence, including post-submission status visibility; decide whether to request changes or advance to HUMAN validation. Production delivery failure remains unproven pending Observability correlation and inbox testing.
 - Human action: Run PHASE 1 with a FRONTIER for independent review.
 
 ---
@@ -657,7 +702,7 @@ Status:
 The active task may be marked `DONE` only when all applicable conditions
 are satisfied:
 
-- [ ] Acceptance Criteria satisfied.
+- [x] Acceptance Criteria satisfied.
 - [x] Required automated verification passed.
 - [ ] FRONTIER independent review accepted.
 - [ ] Required HUMAN validation passed or is explicitly `NOT_REQUIRED`.
