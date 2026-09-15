@@ -14,7 +14,7 @@ FRONTIER and IMPLEMENTER are roles, not specific models or products.
 # Operator Control
 
 - Active task: `T-003`
-- Contract revision: `5`
+- Contract revision: `6`
 - Status: `READY_FOR_FRONTIER_REVIEW`
 - Next role: `FRONTIER`
 - Next phase: `PHASE_1`
@@ -22,7 +22,7 @@ FRONTIER and IMPLEMENTER are roles, not specific models or products.
 - Completion state: `NOT_COMPLETE`
 - Human validation required: `YES`
 - Last verified branch: `main`
-- Last verified HEAD: `b8c5701482ba772078db42b8abbd5b6ea45c49d7` (verified and pushed implementation; this boundary documentation follows in a separate commit)
+- Last verified HEAD: `116d89518499a24dc31c7d3e8e5066abc33e658f` (verified and pushed implementation; this boundary documentation follows in a separate commit)
 
 > HUMAN:
 >
@@ -254,6 +254,8 @@ Current evidence:
 - Analysis of `src/pages/api/contact.ts` revealed that configuration errors (missing secret, invalid email), Email Service rejection, and unhandled runtime exceptions return the identical generic error message to the client, while console error logging in the outer catch omitted `error.message`, `error.stack`, and full diagnostic details.
 - Analysis identified that passing `replyTo: undefined` when no email is provided may violate native binding parameter constraints in workerd, and resolving runtime variables solely from `env[name]` lacks fallback to `process.env[name]`.
 - Cloudflare Email Service requires `CONTACT_FROM` to match the onboarded sending domain (`notify.whoisjk.me`).
+- Revision 5 independent FRONTIER review verified `src/pages/api/contact.ts` sender domain validation (`@notify.whoisjk.me`) and Docker Sandbox checks (`pnpm run check` 0 errors, `pnpm test` 3 passed, `git diff --check` clean).
+- FRONTIER independent review identified that `iamjk:turnstile-ready` in `src/pages/index.astro` calls `announceContactStatus("", "")` unconditionally. After a contact form submission, `announceContactStatus("is-success", ...)` or `announceContactStatus("is-error", ...)` is displayed and `window.turnstile?.reset()` is invoked. When Turnstile in Managed mode completes its reset challenge, `iamjk:turnstile-ready` fires and unconditionally clears `contactStatus`, causing the success confirmation or error reference code to vanish within a fraction of a second.
 
 # Frontier Decision
 
@@ -278,6 +280,10 @@ Status:
   3. Sender domain guard: In `src/pages/api/contact.ts`, validate that `CONTACT_FROM` ends with `@notify.whoisjk.me` (or verified sending domain), logging a descriptive configuration error if mismatched.
   4. Correlate Observability logs: Human inspects Cloudflare Observability logs for `requestId: 263c5a7c` to verify the provider error returned during production delivery failure.
   5. Update tests, verify in Docker Sandbox, commit, and push to `origin main`.
+- **Preserve Post-Submission Status Feedback on Turnstile Ready (Contract Revision 6)**:
+  In `src/pages/index.astro`, guard `announceContactStatus("", "")` in the `iamjk:turnstile-ready` event listener so that it only clears status when `contactStatus?.classList.contains("is-pending")`. This ensures that pending/loading messages (`"Loading secure check…"`, `"Secure check is still loading. Please wait a moment."`, and `"Complete the secure check before sending."`) are cleared as soon as Turnstile is ready, while post-submission outcome messages (`is-success` and `is-error`) remain visible to the user.
+  Update `tests/rendered-html.test.mjs` to assert that pending status is cleared while success and error statuses are preserved upon `iamjk:turnstile-ready`.
+  Verify in Docker Sandbox, commit, and push to `origin main`.
 
 ---
 
@@ -366,6 +372,23 @@ Status:
     - **Verification**: Run `pnpm run check`, `pnpm test`, and `git diff --check` in Docker Sandbox.
     - **Stage, Commit, and Push**: Commit verified changes on `main` and push to `origin main` on GitHub.
     - **Handoff**: Transition handoff state to `READY_FOR_FRONTIER_REVIEW`.
+12. Preserve Post-Submission Status Feedback on Turnstile Ready (Contract Revision 6):
+    - **Status check in Turnstile ready listener**: In `src/pages/index.astro`, update the `iamjk:turnstile-ready` event listener to only clear status if the status is currently in a pending/loading state (`contactStatus?.classList.contains("is-pending")`):
+      ```ts
+      document.addEventListener("iamjk:turnstile-ready", () => {
+        setTurnstileState("ready");
+        if (contactStatus?.classList.contains("is-pending")) {
+          announceContactStatus("", "");
+        }
+      });
+      ```
+    - **Regression assertions**: In `tests/rendered-html.test.mjs`, expand the Turnstile ready test suite to verify that:
+      1. Pending/loading messages (`"Loading secure check…"`, `"Secure check is still loading. Please wait a moment."`, `"Complete the secure check before sending."`) with class `contact-status is-pending` are cleared on `iamjk:turnstile-ready`.
+      2. Success message (`"Thanks. Your message is on its way."`) with class `contact-status is-success` is NOT cleared and retains its content and class on `iamjk:turnstile-ready`.
+      3. Error message (`"I couldn’t send your message. Reference ..."` or `"We could not verify your submission. Please try again."`) with class `contact-status is-error` is NOT cleared and retains its content and class on `iamjk:turnstile-ready`.
+    - **Verification**: Run `pnpm run check`, `pnpm test`, and `git diff --check` in Docker Sandbox.
+    - **Stage, Commit, and Push**: Commit verified changes on `main` and push to `origin main` on GitHub.
+    - **Handoff**: Transition handoff state to `READY_FOR_FRONTIER_REVIEW`.
 
 ## Relevant Components
 
@@ -418,6 +441,9 @@ Status:
 - [x] Hardened changeset committed and pushed to `origin main`.
 - [x] Revision 5 clears Turnstile status on ready and rejects sender domains other than `notify.whoisjk.me` with a logged 503.
 - [x] Revision 5 regression tests and required verification pass; implementation committed and pushed.
+- [x] Revision 6 preserves `is-success` and `is-error` feedback on `iamjk:turnstile-ready` while clearing `is-pending` loading/waiting messages.
+- [x] Revision 6 regression tests in `tests/rendered-html.test.mjs` verify both pending clearing and success/error preservation.
+- [x] Revision 6 verified in Docker Sandbox, committed, and pushed to `origin main`.
 
 ---
 
@@ -462,6 +488,11 @@ Status:
 
 ## Material Changes
 
+- Revision 6: ready events clear only `is-pending` status. Success feedback and
+  error references retain their text and class after Turnstile becomes ready.
+  Extended the existing event-driven test with three pending messages, one success
+  message, and two error messages, preserving the existing implementation elsewhere.
+
 - Revision 5: cleared status unconditionally in the Turnstile ready listener as
   contracted; added case-insensitive exact sender-domain validation after existing
   email syntax validation and before delivery. Invalid domains receive a generic
@@ -498,8 +529,8 @@ Status:
 
 ## Files / Components Changed
 
-Revision 5 modifies only `src/pages/index.astro`, `src/pages/api/contact.ts`,
-`tests/rendered-html.test.mjs`, and this handoff. Earlier revision files below
+Revision 6 modifies only `src/pages/index.astro`, `tests/rendered-html.test.mjs`,
+and this handoff. Earlier revision files below
 remain preserved.
 
 - `.dockerignore`
@@ -520,6 +551,21 @@ remain preserved.
 - `docs/ai/AI_HANDOFF.md` (this boundary update)
 
 ## Verification Executed
+
+- Revision 6 focused Docker Sandbox regression: failed before the fix because
+  ready erased the success message, then passed with the pending-only guard.
+- Revision 6 `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check`
+  — PASS: generated types current, 0 errors, 0 warnings, 0 hints.
+- Revision 6 `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test`
+  — PASS: static build completed, 3 tests passed, 0 failures.
+- Revision 6 `git diff --check` and staged whitespace check — PASS; final source
+  and test diff inspected against the contract. Existing FRONTIER handoff edits preserved.
+- Revision 6 implementation committed and pushed to `origin main` as
+  `116d89518499a24dc31c7d3e8e5066abc33e658f`, using the established per-command
+  `commit.gpgSign=false` override. This single boundary write is followed only by
+  documentation commit/push and final clean-status verification.
+
+Revision 5 evidence:
 
 - Revision 5 focused Docker Sandbox tests: both failed before the fixes (invalid
   domain returned 200; loading text remained), then both passed after the fixes.
@@ -557,7 +603,7 @@ Earlier revision evidence:
 
 ## Result
 
-`READY_FOR_FRONTIER_REVIEW` — the revision 5 contract is implemented, freshly
+`READY_FOR_FRONTIER_REVIEW` — the revision 6 contract is implemented, freshly
 verified, committed, and pushed to `origin main`.
 
 ## Remaining Uncertainty
@@ -565,8 +611,8 @@ verified, committed, and pushed to `origin main`.
 - Production reference `263c5a7c` has not been correlated with Observability logs
   during this invocation. The sender guard does not prove the cause or resolution
   of the production delivery failure. Deployment and inbox receipt remain unverified.
-- Per the explicit contract, every ready event clears status, including after a
-  post-submission widget reset; HUMAN should assess feedback visibility in that flow.
+- Revision 6 preserves submission outcomes in the event-driven regression;
+  live browser feedback visibility after a Managed-mode reset remains unverified.
 - The Turnstile regression executes the listener with DOM stand-ins, not a live
   browser or provider challenge. Existing Node `stripTypeScriptTypes` experimental
   warning remains; no dependencies were added.
@@ -580,7 +626,8 @@ verified, committed, and pushed to `origin main`.
 ## Human Validation Recommendations
 
 - After independent review, confirm initial loading/waiting text clears when
-  Turnstile succeeds, and assess message visibility after submission/reset.
+  Turnstile succeeds, and confirm success text and error references remain visible
+  after submission/reset and the subsequent ready event.
   Inspect Observability for the full request ID beginning `263c5a7c` to identify
   the provider rejection. Keep HUMAN validation FAIL until a successful retest.
 - Preserve the recorded HUMAN validation FAIL. After FRONTIER review, validate
@@ -593,7 +640,7 @@ verified, committed, and pushed to `origin main`.
 
 # Frontier Review
 
-The findings below issued revision 5. Independent review of revision 5 is pending.
+The findings below issued revision 6. Independent review of revision 6 is pending.
 
 Status:
 
@@ -612,12 +659,13 @@ Allowed decisions:
 
 ## Findings
 
-- Triaged Human Validation FAIL report from production on `https://whoisjk.me`.
-- Evaluated two observed issues from human validation:
-  1. Frontend Turnstile UI state: In `src/pages/index.astro`, `iamjk:turnstile-ready` checked `contactStatus?.textContent?.startsWith("Secure check")`, but the initial loading message was set to `"Loading secure check…"`. Because the string did not match, the text was never cleared, leaving `"Loading secure check…"` stuck on screen even after the Turnstile widget showed `Success!`.
-  2. Turnstile Managed Mode: Clarified that Cloudflare Turnstile's Managed challenge evaluates browser signals dynamically and auto-solves without requiring an interactive click for low-risk human visitors (expected behavior).
-  3. Contact delivery failure: Live submission failed with reference `263c5a7c` (matching `requestId`). The exact provider rejection was logged to Cloudflare Observability under `requestId: 263c5a7c`. Contract Revision 5 adds explicit sender domain validation (`@notify.whoisjk.me`) in `src/pages/api/contact.ts`.
-- Contract Revision 5 issued to IMPLEMENTER to fix Turnstile status clearing, add sender domain validation, update tests, verify in Docker Sandbox, commit, and push.
+- Independently reviewed Revision 5 implementation in commit `b8c5701482ba772078db42b8abbd5b6ea45c49d7` and documentation handoff `dedc786`.
+- Verified in Docker Sandbox that all automated checks pass (`pnpm run check` 0 errors, `pnpm test` 3 passed, `git diff --check` clean).
+- Verified `src/pages/api/contact.ts`: sender domain validation enforcing `@notify.whoisjk.me` is clean, robust, and correctly tested.
+- Concrete deficiency identified: In `src/pages/index.astro`, `iamjk:turnstile-ready` unconditionally executes `announceContactStatus("", "")`. When a visitor submits the contact form, the submission handler sets success feedback (`"Thanks. Your message is on its way."`, class `is-success`) or error feedback (`"I couldn’t send your message. Reference ..."`, class `is-error`) and calls `window.turnstile?.reset()`. In Cloudflare Turnstile Managed mode, the widget auto-solves and fires `iamjk:turnstile-ready`. Because the ready listener cleared status unconditionally, user-facing success notices and error reference codes flashed and vanished within a fraction of a second.
+- Expected correction: `iamjk:turnstile-ready` must only call `announceContactStatus("", "")` when `contactStatus?.classList.contains("is-pending")`. Post-submission outcomes (`is-success`, `is-error`) must remain visible until the user interacts with or resubmits the form.
+- Expanded test requirements: `tests/rendered-html.test.mjs` must assert that pending/loading messages are cleared upon `iamjk:turnstile-ready` while success and error messages are preserved.
+- Contract Revision 6 issued to IMPLEMENTER.
 
 # Human Validation
 
@@ -692,7 +740,7 @@ Status:
 
 - Role: `FRONTIER`
 - Phase: `PHASE_1`
-- Action: Independently review revision 5, its pushed implementation and verification evidence, including post-submission status visibility; decide whether to request changes or advance to HUMAN validation. Production delivery failure remains unproven pending Observability correlation and inbox testing.
+- Action: Independently review revision 6, its pushed implementation and verification evidence; decide whether to request changes or advance to HUMAN validation. Live post-reset feedback, deployment, and inbox receipt remain unverified.
 - Human action: Run PHASE 1 with a FRONTIER for independent review.
 
 ---
