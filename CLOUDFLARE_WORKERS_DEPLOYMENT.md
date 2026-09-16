@@ -55,13 +55,18 @@ add these plaintext environment variables:
 
 Add these encrypted production secrets:
 
-- `TURNSTILE_SECRET`
+- `TURNSTILE_SECRET` (or the fallback alias `TURNSTILE_SECRET_KEY`)
 - `CONTACT_TO`
+
+Verify that the Turnstile secret is saved and deployed to the active Worker under
+**Variables and Secrets**, not **Builds**. The endpoint checks `TURNSTILE_SECRET`
+in the Worker binding and then `process.env` before trying `TURNSTILE_SECRET_KEY`
+in the same order. Empty or whitespace-only values are treated as missing.
 
 Also add `TURNSTILE_SITE_KEY` under **Settings** → **Builds** → **Build variables
 and secrets**. The homepage is prerendered, so it reads this public key during
 `astro build`; setting only the runtime variable does not populate the generated
-HTML. Rebuild after changing the site key. Keep `TURNSTILE_SECRET` and
+HTML. Rebuild after changing the site key. Keep `TURNSTILE_SECRET` (or its alias) and
 `CONTACT_TO` in runtime secrets only. Cloudflare documents the separate scopes in
 [Workers Builds configuration](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/).
 

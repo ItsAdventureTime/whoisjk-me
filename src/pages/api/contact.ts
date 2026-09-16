@@ -14,6 +14,10 @@ const validCountryCodes = new Set(countryCodes);
 function secret(name: keyof Pick<ContactEnvironment, "TURNSTILE_SECRET" | "CONTACT_FROM" | "CONTACT_TO">, env: ContactEnvironment): string {
   const value = env[name]?.trim() || (typeof process !== "undefined" ? process.env?.[name]?.trim() : undefined);
   if (value) return value;
+  if (name === "TURNSTILE_SECRET") {
+    const alias = env.TURNSTILE_SECRET_KEY?.trim() || (typeof process !== "undefined" ? process.env?.TURNSTILE_SECRET_KEY?.trim() : undefined);
+    if (alias) return alias;
+  }
   throw new Error(`Missing runtime secret: ${name}`, { cause: `CONFIG_MISSING_SECRET: ${name}` });
 }
 

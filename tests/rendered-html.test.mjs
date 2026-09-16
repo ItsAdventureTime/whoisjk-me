@@ -4,6 +4,29 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import { stripTypeScriptTypes } from "node:module";
 
+test("Turnstile secret alias preserves precedence and missing-secret errors", async () => {
+  const source = await readFile(new URL("../src/pages/api/contact.ts", import.meta.url), "utf8");
+  const outputText = stripTypeScriptTypes(source)
+    .replace(/^import .*;$/gm, "")
+    .replace(/export const /g, "const ");
+  const resolve = (env, processEnv, name = "TURNSTILE_SECRET") => runInNewContext(
+    `${outputText}\nsecret(name, env);`,
+    { env, name, countryCodes: [], Error, ...(processEnv === undefined ? {} : { process: { env: processEnv } }) },
+  );
+  assert.equal(resolve({ TURNSTILE_SECRET_KEY: " binding-alias " }), "binding-alias");
+  assert.equal(resolve({}, { TURNSTILE_SECRET_KEY: " process-alias " }), "process-alias");
+  assert.equal(resolve({ TURNSTILE_SECRET_KEY: "binding-alias" }, { TURNSTILE_SECRET_KEY: "process-alias" }), "binding-alias");
+  assert.equal(resolve({ TURNSTILE_SECRET: " binding-primary ", TURNSTILE_SECRET_KEY: "alias" }, { TURNSTILE_SECRET: "process-primary" }), "binding-primary");
+  assert.equal(resolve({ TURNSTILE_SECRET_KEY: "alias" }, { TURNSTILE_SECRET: " process-primary " }), "process-primary");
+  assert.equal(resolve({ TURNSTILE_SECRET: " ", TURNSTILE_SECRET_KEY: " " }, { TURNSTILE_SECRET: " ", TURNSTILE_SECRET_KEY: " process-alias " }), "process-alias");
+  for (const [env, processEnv] of [[{}, undefined], [{ TURNSTILE_SECRET_KEY: " " }, { TURNSTILE_SECRET_KEY: " " }]]) {
+    assert.throws(() => resolve(env, processEnv), { cause: "CONFIG_MISSING_SECRET: TURNSTILE_SECRET" });
+  }
+  for (const name of ["CONTACT_FROM", "CONTACT_TO"]) {
+    assert.throws(() => resolve({ TURNSTILE_SECRET_KEY: "alias" }, {}, name), { cause: `CONFIG_MISSING_SECRET: ${name}` });
+  }
+});
+
 test("contact delivery handles configuration, optional reply addresses, and diagnostics", async () => {
   const source = await readFile(new URL("../src/pages/api/contact.ts", import.meta.url), "utf8");
   const outputText = stripTypeScriptTypes(source)

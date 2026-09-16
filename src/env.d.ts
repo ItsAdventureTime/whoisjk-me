@@ -21,6 +21,7 @@ type ContactEnvironment = Omit<Env, "CONTACT_RATE_LIMITER" | "EMAIL"> & {
   EMAIL: SendEmail;
   TURNSTILE_SITE_KEY?: string;
   TURNSTILE_SECRET: string;
+  TURNSTILE_SECRET_KEY?: string;
   CONTACT_FROM: string;
   CONTACT_TO: string;
 };
