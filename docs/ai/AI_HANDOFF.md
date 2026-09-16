@@ -14,7 +14,7 @@ FRONTIER and IMPLEMENTER are roles, not specific models or products.
 # Operator Control
 
 - Active task: `T-003`
-- Contract revision: `7`
+- Contract revision: `8`
 - Status: `READY_FOR_FRONTIER_REVIEW`
 - Next role: `FRONTIER`
 - Next phase: `PHASE_1`
@@ -22,7 +22,7 @@ FRONTIER and IMPLEMENTER are roles, not specific models or products.
 - Completion state: `NOT_COMPLETE`
 - Human validation required: `YES`
 - Last verified branch: `main`
-- Last verified HEAD: `41a01b51dabdf99ff3c66559476d5f945ab4b75f` (verified and pushed implementation; this boundary documentation follows in a separate commit)
+- Last verified HEAD: `f387443413692c4858c3c27d1f8ff2095498beb7` (verified and pushed revision 8 implementation; this boundary documentation follows in a separate commit)
 
 > HUMAN:
 >
@@ -196,6 +196,7 @@ Do not convert an observation into a claimed root cause unless verified.
 - Human explicitly requested that all references to `iamjk.site` be replaced with `whoisjk.me` across workspace documents and guides.
 - Human explicitly authorized and requested: "Update, add, remove the necessary files, documents/documentation and guides both local and remote Git and push."
 - Human validation on `https://whoisjk.me` reported FAIL: submission produced client errors `"I couldn’t send your message. Reference 774d5e83."` and `"I couldn’t send your message. Reference a6450297."`.
+- Human validation on `https://whoisjk.me` reported FAIL: submission produced client error `"I couldn’t send your message. Reference 531d7a0b. (CONFIG_MISSING_SECRET: TURNSTILE_SECRET)"`.
 - Human requested thorough review of Cloudflare Workers and Cloudflare Email Service (`send_email`), adjustments to codebase, and specifically noted that remaining references to `iamjk` should be updated to `whoisjk` / `whoisjk-me`.
 
 # Scope
@@ -212,6 +213,7 @@ Do not convert an observation into a claimed root cause unless verified.
 - Broaden sender domain validation in `src/pages/api/contact.ts` to accept `whoisjk.me` and `*.whoisjk.me` subdomains.
 - Propagate explicit error diagnostic codes and categories in client-facing error responses in `src/pages/api/contact.ts`.
 - Purge remaining `iamjk` references across `src/pages/index.astro`, `scripts/sandbox-node.sh`, `deploy/` templates, and `tests/rendered-html.test.mjs`.
+- Support `TURNSTILE_SECRET_KEY` fallback alias alongside `TURNSTILE_SECRET` in `src/pages/api/contact.ts` and update tests/types (Contract Revision 8).
 - Verify through local Docker Sandbox (`pnpm run check`, `pnpm test`, `git diff --check`).
 - Stage, commit, and push the verified changeset to `main` on `https://github.com/ItsAdventureTime/whoisjk-me`.
 
@@ -266,6 +268,9 @@ Current evidence:
 - All contact form delivery errors currently collapse into an identical opaque client message (`"I couldn’t send your message. Reference ..."`), preventing immediate in-browser diagnosis of why delivery failed.
 - Revision 5 sender domain validation (`!from.toLowerCase().endsWith("@notify.whoisjk.me")`) strictly rejected senders on the apex domain `whoisjk.me` or other subdomains.
 - Grep inspection confirmed active `iamjk` references remain in `src/pages/index.astro` (Turnstile callbacks, window state, and custom events), `scripts/sandbox-node.sh` (`/tmp/iamjk-home`, `/tmp/iamjk-pnpm`), and `deploy/` (`iamjk-site.container.example`, `iamjk-site.local.conf.example`).
+- Human validation FAIL on `https://whoisjk.me` with reference code `531d7a0b` and diagnostic `(CONFIG_MISSING_SECRET: TURNSTILE_SECRET)`.
+- Confirms that Turnstile challenge completed, honeypot and rate-limiting passed, and endpoint reached secret retrieval, but `env.TURNSTILE_SECRET` and `process.env.TURNSTILE_SECRET` are both undefined in the live Cloudflare Worker runtime.
+- Cloudflare Turnstile documentation confirms Turnstile secret keys are commonly named either `TURNSTILE_SECRET` or `TURNSTILE_SECRET_KEY`, and runtime secrets must be configured under **Workers & Pages** → `whoisjk-me` → **Settings** → **Variables and Secrets** (not **Builds**) and deployed to the active Worker.
 
 # Frontier Decision
 
@@ -304,6 +309,12 @@ Status:
      - In `deploy/`: rename `deploy/iamjk-site.container.example` -> `deploy/whoisjk-me.container.example` and `deploy/iamjk-site.local.conf.example` -> `deploy/whoisjk-me.local.conf.example`.
      - In `tests/rendered-html.test.mjs`: update test assertions to match `whoisjk` naming and new deploy filenames, and add negative assertions forbidding `iamjk` in `index.astro`, `sandbox-node.sh`, and `deploy/`.
   4. Verify in Docker Sandbox, commit, and push to `origin main`.
+- **Support `TURNSTILE_SECRET_KEY` Fallback Alias and Enforce Runtime Secret Scope (Contract Revision 8)**:
+  Classify Human Validation FAIL (reference `531d7a0b`) as `IN_SCOPE_DEFECT` / Credential Configuration Defect. Issue Contract Revision 8 for IMPLEMENTER:
+  1. In `src/pages/api/contact.ts`, enhance `secret()` to check `TURNSTILE_SECRET` with fallback to `TURNSTILE_SECRET_KEY` on `env` and `process.env` before throwing `CONFIG_MISSING_SECRET: TURNSTILE_SECRET`.
+  2. Update `src/env.d.ts` to declare optional `TURNSTILE_SECRET_KEY?: string` in `ContactEnvironment`, and update `tests/rendered-html.test.mjs` to test `TURNSTILE_SECRET_KEY` fallback alias resolution when `TURNSTILE_SECRET` is absent.
+  3. Document the runtime secret scope requirement: HUMAN must verify in Cloudflare Dashboard (Workers & Pages → `whoisjk-me` → **Settings** → **Variables and Secrets**) that an encrypted secret named `TURNSTILE_SECRET` (or `TURNSTILE_SECRET_KEY`) is added and deployed (not placed under **Builds**).
+  4. Verify in Docker Sandbox (`pnpm run check`, `pnpm test`, `git diff --check`), commit, and push to `origin main`.
 
 ---
 
@@ -426,6 +437,14 @@ Status:
     - **Verification**: Run `pnpm run check`, `pnpm test`, and `git diff --check` in Docker Sandbox.
     - **Stage, Commit, and Push**: Commit verified changes on `main` and push to `origin main` on GitHub.
     - **Handoff**: Transition handoff state to `READY_FOR_FRONTIER_REVIEW`.
+14. Support `TURNSTILE_SECRET_KEY` Fallback Alias (Contract Revision 8):
+    - **Fallback alias in secret helper**: In `src/pages/api/contact.ts`, enhance `secret()` so that if `name === "TURNSTILE_SECRET"` and neither `env.TURNSTILE_SECRET` nor `process.env.TURNSTILE_SECRET` is defined, check `(env as Record<string, string | undefined>)["TURNSTILE_SECRET_KEY"]?.trim()` and `(process.env as Record<string, string | undefined>)?["TURNSTILE_SECRET_KEY"]?.trim()` before throwing `CONFIG_MISSING_SECRET: TURNSTILE_SECRET`.
+    - **Environment types**: In `src/env.d.ts`, declare optional `TURNSTILE_SECRET_KEY?: string` in `ContactEnvironment`.
+    - **Regression tests**: In `tests/rendered-html.test.mjs`, add tests asserting that `TURNSTILE_SECRET_KEY` is accepted as a fallback alias when `TURNSTILE_SECRET` is absent.
+    - **Dashboard verification guidance**: Note that the HUMAN must verify in Cloudflare Dashboard (Workers & Pages → `whoisjk-me` → **Settings** → **Variables and Secrets**) that an encrypted secret named `TURNSTILE_SECRET` (or `TURNSTILE_SECRET_KEY`) is present and deployed (not under **Builds**).
+    - **Verification**: Run `pnpm run check`, `pnpm test`, and `git diff --check` in Docker Sandbox.
+    - **Stage, Commit, and Push**: Commit verified changes on `main` and push to `origin main` on GitHub.
+    - **Handoff**: Transition handoff state to `READY_FOR_FRONTIER_REVIEW`.
 
 ## Relevant Components
 
@@ -489,6 +508,10 @@ Status:
 - [x] Deploy example files in `deploy/` renamed to `whoisjk-me.*`.
 - [x] Tests in `tests/rendered-html.test.mjs` updated to assert `whoisjk` naming and pass with 0 errors in Docker Sandbox.
 - [x] Revision 7 verified in Docker Sandbox, committed, and pushed to `origin main`.
+- [x] `src/pages/api/contact.ts` supports `TURNSTILE_SECRET_KEY` as a fallback alias for `TURNSTILE_SECRET`.
+- [x] `src/env.d.ts` declares optional `TURNSTILE_SECRET_KEY?: string` in `ContactEnvironment`.
+- [x] `tests/rendered-html.test.mjs` asserts `TURNSTILE_SECRET_KEY` fallback alias resolution and passes with 0 errors in Docker Sandbox.
+- [x] Revision 8 verified in Docker Sandbox, committed, and pushed to `origin main`.
 
 ---
 
@@ -511,7 +534,7 @@ HUMAN should validate:
 
 1. In Cloudflare Dashboard → **Workers & Pages** → `whoisjk-me` → **Settings** → **Variables and Secrets**:
    - Add Environment Variables (plaintext): `TURNSTILE_SITE_KEY`, `CONTACT_FROM` (e.g. `contact@notify.whoisjk.me`).
-   - Add Secrets (encrypted): `TURNSTILE_SECRET`, `CONTACT_TO` (destination email address).
+    - Verify encrypted runtime secret `TURNSTILE_SECRET` (or `TURNSTILE_SECRET_KEY`) and `CONTACT_TO` (destination email address) are saved and deployed to the active Worker, not only configured under Builds.
    - Delete obsolete `RESEND_*` secrets (`RESEND_API_KEY`, `RESEND_FROM`, `RESEND_TO`).
 2. Verify in Cloudflare Dashboard → **Compute** → **Email Service** → **Email Sending** that `notify.whoisjk.me` domain is active and verified.
 3. After FRONTIER resolves the blocker, configure `TURNSTILE_SITE_KEY` under
@@ -532,6 +555,12 @@ Status:
 `IMPLEMENTED`
 
 ## Material Changes
+
+- Revision 8: `secret()` preserves primary Worker/process lookup precedence,
+  then tries `TURNSTILE_SECRET_KEY` in the Worker binding and process environment.
+  Both names are trimmed; blank values remain missing. Other configuration names
+  and the existing missing-secret diagnostic are unchanged. Added the optional
+  alias type, behavioral regressions, and runtime-secret dashboard guidance.
 
 - Revision 7: sender validation accepts the apex `whoisjk.me` and its subdomains,
   case-insensitively, after existing email syntax checks; suffix lookalikes remain rejected.
@@ -587,6 +616,10 @@ Status:
 
 ## Files / Components Changed
 
+Revision 8 changes `src/pages/api/contact.ts`, `src/env.d.ts`,
+`tests/rendered-html.test.mjs`, `CLOUDFLARE_WORKERS_DEPLOYMENT.md`, and this handoff.
+Existing FRONTIER contract edits and previous implementation are preserved.
+
 Revision 7 changes `src/pages/api/contact.ts`, `src/pages/index.astro`,
 `scripts/sandbox-node.sh`, `tests/rendered-html.test.mjs`, and this handoff;
 renames `deploy/iamjk-site.container.example` to `deploy/whoisjk-me.container.example`
@@ -615,6 +648,24 @@ remain preserved.
 - `docs/ai/AI_HANDOFF.md` (this boundary update)
 
 ## Verification Executed
+
+- Revision 8 focused Docker Sandbox regression failed before the fix with
+  `Missing runtime secret: TURNSTILE_SECRET` for alias-only configuration,
+  then passed. Covers both alias sources, primary/alias precedence, trimming,
+  blank/missing values, absent `process`, and isolation from contact address lookup.
+- Revision 8 `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check`
+  — PASS: generated types current; 0 errors, 0 warnings, 0 hints.
+- Revision 8 `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test`
+  — PASS: static build completed; 4 tests passed, 0 failures. Existing Node
+  `stripTypeScriptTypes` experimental warning remains.
+- Revision 8 `jk-sbx-project exec git diff --check`, host `git diff --check`,
+  and staged whitespace check — PASS. Final implementation diff inspected against
+  the contract; no dependency, UI, or architecture changes.
+- Revision 8 implementation committed and pushed to `origin main` as
+  `f387443413692c4858c3c27d1f8ff2095498beb7`; `git ls-remote` confirmed the same
+  remote HEAD. Used the established per-command `commit.gpgSign=false` override.
+  Only this handoff remains modified at the boundary; its documentation commit/push
+  and final clean-status verification follow this single handoff write.
 
 - Revision 7 focused Docker Sandbox endpoint regression failed before implementation
   (apex sender returned 503 instead of 200), then passed after the endpoint changes.
@@ -688,10 +739,17 @@ Earlier revision evidence:
 
 ## Result
 
-`READY_FOR_FRONTIER_REVIEW` — the revision 7 contract is implemented, freshly
+`READY_FOR_FRONTIER_REVIEW` — the revision 8 contract is implemented, freshly
 verified, committed, and pushed to `origin main`.
 
 ## Remaining Uncertainty
+
+- Revision 8 proves local alias lookup behavior, not active production secret
+  configuration, deployment success, challenge acceptance, or inbox receipt.
+  No secret values were read or changed. The reported missing-secret response
+  proves no usable primary value was resolved; it does not distinguish an absent
+  binding from an empty value or establish that the alias is configured.
+  HUMAN validation remains FAIL pending an end-to-end retest after review.
 
 - Revision 7 does not establish the production cause of references `774d5e83`
   or `a6450297`, deployment success, or actual inbox receipt. Broader local domain
@@ -718,6 +776,13 @@ verified, committed, and pushed to `origin main`.
 
 ## Human Validation Recommendations
 
+- After revision 8 independent review, verify an encrypted `TURNSTILE_SECRET`
+  or `TURNSTILE_SECRET_KEY` is saved and deployed under Workers & Pages →
+  `whoisjk-me` → Settings → Variables and Secrets (runtime, not Builds).
+  Confirm Workers Builds deployed the pushed revision, submit with and without
+  a reply email, verify persistent feedback and inbox receipt, and record the
+  diagnostic/reference ID if delivery still fails. Do not infer PASS from local tests.
+
 - After revision 7 independent review, confirm Workers Builds deployed the pushed
   revision, then submit with and without a reply email. Verify the renamed Turnstile
   callbacks work, pending text clears, and outcome feedback persists through reset.
@@ -740,7 +805,7 @@ verified, committed, and pushed to `origin main`.
 
 # Frontier Review
 
-The acceptance below applies to revision 6. Revision 7 independent review is pending.
+The acceptance below applies to revision 7. Revision 8 independent review is pending.
 
 Status:
 
@@ -759,14 +824,20 @@ Allowed decisions:
 
 ## Findings
 
-- Independently reviewed Revision 6 implementation in commit `116d89518499a24dc31c7d3e8e5066abc33e658f` and handoff commit `5651f83440ee5910e6e088246e89ecb7ddd69f4f`.
-- Inspected code changes in `src/pages/index.astro`: verified `iamjk:turnstile-ready` event listener guards status clearing with `if (contactStatus?.classList.contains("is-pending")) announceContactStatus("", "")`. This clears initial loading and waiting messages once Turnstile is ready, while post-submission feedback (`is-success` or `is-error`) remains visible across Turnstile reset cycles.
-- Inspected `tests/rendered-html.test.mjs`: regression tests verify that pending messages (`"Loading secure check…"`, `"Secure check is still loading. Please wait a moment."`, `"Complete the secure check before sending."`) are cleared upon ready, while success (`"Thanks. Your message is on its way."`) and error messages (`"I couldn’t send your message. Reference 263c5a7c."`, `"We could not verify your submission. Please try again."`) are preserved with their original classes and text.
+- Independently reviewed Revision 7 implementation in commit `41a01b51dabdf99ff3c66559476d5f945ab4b75f` and documentation handoff commit `77c7d48a71672f9a57c56584004a983b5855b4db`.
+- Inspected code changes in `src/pages/api/contact.ts`:
+  - Sender domain validation parses the domain after `@` case-insensitively and allows `whoisjk.me` and any `*.whoisjk.me` subdomain, rejecting lookalikes (e.g. `evilwhoisjk.me`) and unverified domains with a descriptive log and a 503 response tagged `(INVALID_SENDER_DOMAIN)`.
+  - Client-facing error responses append bounded diagnostic tags (`(CONFIG_MISSING_SECRET: <name>)`, `(INVALID_EMAIL_CONFIG)`, `(INVALID_SENDER_DOMAIN)`, `(EMAIL_BINDING_UNAVAILABLE)`, `(<details.code || "DELIVERY_REJECTED">)`, `(SUBMISSION_ERROR: <errorName>)`), enabling immediate in-browser diagnosis while preserving privacy by keeping sensitive stacks, secrets, and inbox addresses restricted to server-side Observability logs.
+- Inspected codebase naming purge:
+  - `src/pages/index.astro`: updated Turnstile callbacks (`whoisjkTurnstileReady`, `whoisjkTurnstileExpired`, `whoisjkTurnstileError`), state (`__whoisjkTurnstileState`), and custom events (`whoisjk:turnstile-*`). Event listener maintains the `is-pending` check to preserve submission outcomes (`is-success`, `is-error`) across reset cycles.
+  - `scripts/sandbox-node.sh`: temporary paths updated to `/tmp/whoisjk-home` and `/tmp/whoisjk-pnpm`.
+  - `deploy/`: example files renamed to `whoisjk-me.container.example` and `whoisjk-me.local.conf.example`.
+  - Negative assertions confirmed across `src/pages/index.astro`, `scripts/sandbox-node.sh`, `deploy/`, and rendered HTML to ensure no active `iamjk` references remain.
 - Independently re-ran automated verification in Docker Sandbox:
-  - `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check` -> PASS (0 errors, 0 warnings, 0 hints; generated types up to date).
-  - `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test` -> PASS (3 tests passed, 0 failures; static build complete).
+  - `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check` -> PASS (0 errors, 0 warnings, 0 hints; generated worker types up to date).
+  - `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test` -> PASS (3 tests passed, 0 failures; static prerendering `/index.html` completed).
   - `git diff --check` -> PASS (clean formatting and whitespace).
-- Confirmed Git status clean and commits pushed to remote `main`.
+- Confirmed Git status clean and commits pushed to remote `main` (`origin/main` at `77c7d48`).
 - Technical implementation accepted. Advancing to `READY_FOR_HUMAN_VALIDATION` for end-to-end verification on `https://whoisjk.me`.
 
 # Human Validation
@@ -784,10 +855,9 @@ Allowed values:
 
 ## Observed Result
 
-- Revision 6 / Live validation: Contact form submissions on `https://whoisjk.me` produced client-facing errors: `"I couldn’t send your message. Reference 774d5e83."` and `"I couldn’t send your message. Reference a6450297."`.
-- Human observed that Turnstile challenge completed, but delivery failed repeatedly.
-- Human noted remaining `iamjk` references across the codebase that should be updated to `whoisjk` / `whoisjk-me`.
-- Historical Revision 4: Live contact form submission on `https://whoisjk.me` produced client-facing error: `"I couldn’t send your message. Reference 263c5a7c."`.
+- Revision 7 / Live validation: Contact form submission on `https://whoisjk.me` produced client-facing error: `"I couldn’t send your message. Reference 531d7a0b. (CONFIG_MISSING_SECRET: TURNSTILE_SECRET)"`.
+- Historical Revision 6: Contact form submissions produced client-facing errors: `"I couldn’t send your message. Reference 774d5e83."` and `"I couldn’t send your message. Reference a6450297."`.
+- Historical Revision 4: Live contact form submission produced client-facing error: `"I couldn’t send your message. Reference 263c5a7c."`.
 
 ## Expected Result
 
@@ -801,8 +871,8 @@ Allowed values:
 
 ## Evidence
 
-- Error messages: `"I couldn’t send your message. Reference 774d5e83."` and `"I couldn’t send your message. Reference a6450297."`.
-- Historical error message: `"I couldn’t send your message. Reference 263c5a7c."`.
+- Error message: `"I couldn’t send your message. Reference 531d7a0b. (CONFIG_MISSING_SECRET: TURNSTILE_SECRET)"`.
+- Historical error messages: `"Reference 774d5e83."`, `"Reference a6450297."`, `"Reference 263c5a7c."`.
 
 # Human Feedback
 
@@ -820,14 +890,15 @@ Allowed classifications:
 
 ## Analysis
 
-- Classify as `IN_SCOPE_DEFECT`.
-- Defect 1 (Contact Delivery Diagnostics & Domain Flexibility):
-  - In `src/pages/api/contact.ts`, all validation and delivery failures return an identical generic message `"I couldn’t send your message. Reference ..."` without exposing the error category or provider error code, preventing immediate in-browser diagnosis.
-  - The sender domain check strictly required `from.toLowerCase().endsWith("@notify.whoisjk.me")`, rejecting valid configurations on `whoisjk.me`.
-  - Correction: Broaden domain check to accept `whoisjk.me` and `*.whoisjk.me`, and append diagnostic categories/codes (e.g. `(CONFIG_MISSING_SECRET: ${name})`, `(INVALID_SENDER_DOMAIN)`, `(EMAIL_BINDING_UNAVAILABLE)`, `(${details.code || "DELIVERY_REJECTED"})`) to client-facing responses.
-- Defect 2 (Residual `iamjk` References):
-  - Audit revealed remaining `iamjk` references in `src/pages/index.astro` (callbacks `iamjkTurnstile*`, state `__iamjkTurnstileState`, events `iamjk:turnstile-*`), `scripts/sandbox-node.sh` (`/tmp/iamjk-home`, `/tmp/iamjk-pnpm`), and `deploy/` (`iamjk-site.container.example`, `iamjk-site.local.conf.example`).
-  - Correction: Purge all remaining `iamjk` references, update Turnstile identifiers and events in `index.astro` and `tests/rendered-html.test.mjs` to `whoisjk`, and rename deploy example files to `whoisjk-me.*`.
+- Classify as `IN_SCOPE_DEFECT` / Credential Configuration Defect.
+- Root cause diagnosis:
+  - The diagnostic tag `(CONFIG_MISSING_SECRET: TURNSTILE_SECRET)` confirms client error reporting works as designed.
+  - In `src/pages/api/contact.ts`, `secret("TURNSTILE_SECRET", runtimeEnv)` threw because neither `env.TURNSTILE_SECRET` nor `process.env.TURNSTILE_SECRET` was populated in the running Cloudflare Worker.
+  - On Cloudflare Workers, variables configured under **Settings** → **Builds** → **Build variables and secrets** are build-time only (injected during static prerendering `pnpm run build`), whereas runtime Worker endpoints require encrypted secrets configured under **Settings** → **Variables and Secrets** (and deployed to the active Worker).
+  - Furthermore, official Cloudflare Turnstile documentation and examples commonly use `TURNSTILE_SECRET_KEY` alongside `TURNSTILE_SECRET`.
+  - Correction:
+    1. In `src/pages/api/contact.ts`, add fallback alias checking for `TURNSTILE_SECRET_KEY` on `env` and `process.env` when `TURNSTILE_SECRET` is absent.
+    2. HUMAN must verify in Cloudflare Dashboard (Workers & Pages → `whoisjk-me` → **Settings** → **Variables and Secrets**) that an encrypted secret named `TURNSTILE_SECRET` (or `TURNSTILE_SECRET_KEY`) is saved and deployed to the active Worker.
 
 ---
 
@@ -835,12 +906,12 @@ Allowed classifications:
 
 Status:
 
-`RESOLVED`
+`RESOLVED_PENDING_HUMAN_DASHBOARD_SECRET`
 
-- **Diagnosis**: `src/pages/index.astro` is statically prerendered (`export const prerender = true;`) during `pnpm run build` (`astro build`). Prerendering must be preserved for edge CDN delivery. In Cloudflare Workers Builds CI, runtime variables (`Settings` → `Variables and Secrets`) are not injected into the build environment; build-time environment variables must be defined under `Settings` → `Builds` → `Build variables and secrets`.
-- **Resolution**: The public `TURNSTILE_SITE_KEY` must be configured by the HUMAN under Cloudflare Dashboard → **Workers & Pages** → `whoisjk-me` → **Settings** → **Builds** → **Build variables and secrets** before triggering the production build on `origin main`.
-- **Contract**: Implementation Contract Revision 3 issues the bounded contract for IMPLEMENTER to re-run verification in Docker Sandbox, commit, push to `origin main`, and transition to `READY_FOR_HUMAN_VALIDATION`.
-- **Implementation boundary**: Phase 2 resumed after the documented dashboard prerequisite. The verified changeset was committed and pushed; live build-variable injection remains a HUMAN validation item rather than an implementation blocker.
+- **Diagnosis**: The reported response indicates no usable primary `TURNSTILE_SECRET` value was resolved. Active production secret configuration remains unverified; build-only variables do not provide runtime secrets.
+- **Resolution**:
+  1. Code: Revision 8 fallback alias support is implemented, verified locally, and pushed; independent FRONTIER review is pending.
+  2. Dashboard: HUMAN verifies in Cloudflare Dashboard → **Workers & Pages** → `whoisjk-me` → **Settings** → **Variables and Secrets** (Runtime secrets, NOT Build variables) that encrypted secret `TURNSTILE_SECRET` (or `TURNSTILE_SECRET_KEY`) is added and that changes are deployed.
 
 ---
 
@@ -848,7 +919,7 @@ Status:
 
 - Role: `FRONTIER`
 - Phase: `PHASE_1`
-- Action: Independently review revision 7, its pushed implementation and verification evidence; decide whether to request changes or advance to HUMAN validation. Production deployment, live diagnostic visibility, and inbox receipt remain unverified.
+- Action: Independently review revision 8 implementation and verification evidence; assess readiness for runtime-secret verification and live HUMAN retest.
 - Human action: Run PHASE 1 with a FRONTIER for independent review.
 
 ---
@@ -858,11 +929,11 @@ Status:
 The active task may be marked `DONE` only when all applicable conditions
 are satisfied:
 
-- [x] Acceptance Criteria satisfied.
-- [x] Required automated verification passed.
+- [ ] Acceptance Criteria satisfied.
+- [ ] Required automated verification passed.
 - [ ] FRONTIER independent review accepted.
 - [ ] Required HUMAN validation passed or is explicitly `NOT_REQUIRED`.
-- [x] No unresolved blocker remains.
+- [ ] No unresolved blocker remains.
 - [ ] No known unresolved in-scope defect remains.
 
 When complete, Operator Control MUST say:
