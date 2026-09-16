@@ -320,7 +320,7 @@ const pageDescription = "A personal field guide to JK de Guzman, covering faith,
               <span>Message <b aria-hidden="true">*</b></span>
               <textarea id="contact-message" name="message" rows="7" required maxlength="5000"></textarea>
             </label>
-            <div class="cf-turnstile" data-sitekey={turnstileSiteKey} data-action="turnstile-spin-v2" data-theme="dark" data-size="flexible" data-callback="iamjkTurnstileReady" data-expired-callback="iamjkTurnstileExpired" data-error-callback="iamjkTurnstileError"></div>
+            <div class="cf-turnstile" data-sitekey={turnstileSiteKey} data-action="turnstile-spin-v2" data-theme="dark" data-size="flexible" data-callback="whoisjkTurnstileReady" data-expired-callback="whoisjkTurnstileExpired" data-error-callback="whoisjkTurnstileError"></div>
             <input name="startedAt" type="hidden" data-contact-started />
             <input class="contact-trap" name="website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" />
             <div class="contact-form-footer">
@@ -342,18 +342,18 @@ const pageDescription = "A personal field guide to JK de Guzman, covering faith,
       </footer>
     </main>
     <script is:inline>
-      window.__iamjkTurnstileState = { state: "loading" };
-      window.iamjkTurnstileReady = (token) => {
-        window.__iamjkTurnstileState = { state: "ready", token };
-        document.dispatchEvent(new CustomEvent("iamjk:turnstile-ready", { detail: token }));
+      window.__whoisjkTurnstileState = { state: "loading" };
+      window.whoisjkTurnstileReady = (token) => {
+        window.__whoisjkTurnstileState = { state: "ready", token };
+        document.dispatchEvent(new CustomEvent("whoisjk:turnstile-ready", { detail: token }));
       };
-      window.iamjkTurnstileExpired = () => {
-        window.__iamjkTurnstileState = { state: "expired" };
-        document.dispatchEvent(new CustomEvent("iamjk:turnstile-expired"));
+      window.whoisjkTurnstileExpired = () => {
+        window.__whoisjkTurnstileState = { state: "expired" };
+        document.dispatchEvent(new CustomEvent("whoisjk:turnstile-expired"));
       };
-      window.iamjkTurnstileError = () => {
-        window.__iamjkTurnstileState = { state: "error" };
-        document.dispatchEvent(new CustomEvent("iamjk:turnstile-error"));
+      window.whoisjkTurnstileError = () => {
+        window.__whoisjkTurnstileState = { state: "error" };
+        document.dispatchEvent(new CustomEvent("whoisjk:turnstile-error"));
       };
     </script>
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer is:inline></script>
@@ -372,26 +372,26 @@ const pageDescription = "A personal field guide to JK de Guzman, covering faith,
       const defaultContactSubmitLabel = contactSubmitLabel?.textContent || "Send message";
       type TurnstileState = "loading" | "ready" | "expired" | "error";
       const turnstileWindow = window as Window & {
-        iamjkTurnstileReady?: (token: string) => void;
-        iamjkTurnstileExpired?: () => void;
-        iamjkTurnstileError?: () => void;
-        __iamjkTurnstileState?: { state: TurnstileState; token?: string };
+        whoisjkTurnstileReady?: (token: string) => void;
+        whoisjkTurnstileExpired?: () => void;
+        whoisjkTurnstileError?: () => void;
+        __whoisjkTurnstileState?: { state: TurnstileState; token?: string };
       };
-      let turnstileState: TurnstileState = turnstileWidget ? turnstileWindow.__iamjkTurnstileState?.state || "loading" : "ready";
+      let turnstileState: TurnstileState = turnstileWidget ? turnstileWindow.__whoisjkTurnstileState?.state || "loading" : "ready";
 
       const emitTurnstileEvent = (name: string, token = "") => {
-        document.dispatchEvent(new CustomEvent(`iamjk:turnstile-${name}`, { detail: token }));
+        document.dispatchEvent(new CustomEvent(`whoisjk:turnstile-${name}`, { detail: token }));
       };
-      turnstileWindow.iamjkTurnstileReady = (token) => {
-        turnstileWindow.__iamjkTurnstileState = { state: "ready", token };
+      turnstileWindow.whoisjkTurnstileReady = (token) => {
+        turnstileWindow.__whoisjkTurnstileState = { state: "ready", token };
         emitTurnstileEvent("ready", token);
       };
-      turnstileWindow.iamjkTurnstileExpired = () => {
-        turnstileWindow.__iamjkTurnstileState = { state: "expired" };
+      turnstileWindow.whoisjkTurnstileExpired = () => {
+        turnstileWindow.__whoisjkTurnstileState = { state: "expired" };
         emitTurnstileEvent("expired");
       };
-      turnstileWindow.iamjkTurnstileError = () => {
-        turnstileWindow.__iamjkTurnstileState = { state: "error" };
+      turnstileWindow.whoisjkTurnstileError = () => {
+        turnstileWindow.__whoisjkTurnstileState = { state: "error" };
         emitTurnstileEvent("error");
       };
       if (contactStarted) contactStarted.value = String(Date.now());
@@ -423,20 +423,20 @@ const pageDescription = "A personal field guide to JK de Guzman, covering faith,
         updateContactSubmitState();
         if (message) announceContactStatus(state === "error" || state === "expired" ? "is-error" : "is-pending", message);
       };
-      document.addEventListener("iamjk:turnstile-ready", () => {
+      document.addEventListener("whoisjk:turnstile-ready", () => {
         setTurnstileState("ready");
         if (contactStatus?.classList.contains("is-pending")) {
           announceContactStatus("", "");
         }
       });
-      document.addEventListener("iamjk:turnstile-expired", () => {
+      document.addEventListener("whoisjk:turnstile-expired", () => {
         setTurnstileState("expired", "Secure check expired. Complete it again to send your message.");
       });
-      document.addEventListener("iamjk:turnstile-error", () => {
+      document.addEventListener("whoisjk:turnstile-error", () => {
         setTurnstileState("error", "Secure check unavailable. Refresh it, then try again.");
       });
       if (turnstileWidget) {
-        const initialState = turnstileWindow.__iamjkTurnstileState?.state || "loading";
+        const initialState = turnstileWindow.__whoisjkTurnstileState?.state || "loading";
         setTurnstileState(initialState, initialState === "loading" ? "Loading secure check…" : "");
       }
       contactForm?.addEventListener("submit", async (event) => {

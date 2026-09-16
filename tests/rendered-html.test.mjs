@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import { stripTypeScriptTypes } from "node:module";
@@ -18,7 +18,7 @@ test("contact delivery handles configuration, optional reply addresses, and diag
   const exports = {};
   const processEnv = { TURNSTILE_SECRET: "test-secret", CONTACT_FROM: "sender@notify.whoisjk.me", CONTACT_TO: "inbox@example.com" };
   runInNewContext(`${outputText}\nexports.POST = POST;`, {
-    exports, env, countryCodes: ["PH"], Response, TextDecoder, AbortSignal, crypto,
+    exports, env, countryCodes: ["PH"], Response, TextDecoder, AbortSignal, crypto, Error,
     process: { env: processEnv },
     console: { error: (...args) => logs.push(args), info: () => {} },
     fetch: async (_url, options) => {
@@ -30,6 +30,16 @@ test("contact delivery handles configuration, optional reply addresses, and diag
     method: "POST", headers: { origin: "https://whoisjk.me", "content-type": "application/json" },
     body: JSON.stringify({ name: "Visitor", country: "PH", message: "Hello", email, "cf-turnstile-response": "test-token" }),
   }) });
+  const expectDiagnostic = async (status, tag) => {
+    const count = sent.length;
+    const response = await submit();
+    assert.equal(response.status, status);
+    const { message } = await response.json();
+    assert.match(message, /Reference [0-9a-f]{8}\./);
+    assert.ok(message.endsWith(`(${tag})`), message);
+    assert.doesNotMatch(message, /test-secret|binding-secret|inbox@example.com|private provider detail/);
+    assert.equal(sent.length, count);
+  };
   assert.equal((await submit()).status, 200);
   assert.equal(Object.hasOwn(sent[0], "replyTo"), false);
   assert.equal(sent[0].from, processEnv.CONTACT_FROM);
@@ -38,40 +48,58 @@ test("contact delivery handles configuration, optional reply addresses, and diag
   assert.equal((await submit("reply@example.com")).status, 200);
   assert.equal(sent[1].replyTo, "reply@example.com");
   assert.equal(sent[1].from, env.CONTACT_FROM);
-  for (const from of ["sender@example.com", "sender@sub.notify.whoisjk.me", "sender@notify.whoisjk.me.example.com"]) {
+  for (const from of ["sender@WHOISJK.ME", "sender@sub.notify.whoisjk.me"]) {
     env.CONTACT_FROM = from;
-    const response = await submit();
-    assert.equal(response.status, 503);
-    assert.equal(sent.length, 2);
-    assert.equal(logs.at(-1)[0], "[contact] invalid sender domain: CONTACT_FROM must end with @notify.whoisjk.me");
+    assert.equal((await submit()).status, 200);
+    assert.equal(sent.at(-1).from, from);
+  }
+  for (const from of ["sender@example.com", "sender@evilwhoisjk.me", "sender@notify.whoisjk.me.example.com"]) {
+    env.CONTACT_FROM = from;
+    await expectDiagnostic(503, "INVALID_SENDER_DOMAIN");
     assert.ok(logs.at(-1)[1].requestId);
-    assert.doesNotMatch(await response.text(), /CONTACT_FROM|notify\.whoisjk\.me/);
   }
   env.CONTACT_FROM = "binding@notify.whoisjk.me";
-  for (const binding of [undefined, {}]) {
+  for (const name of ["CONTACT_FROM", "CONTACT_TO"]) {
+    const previous = env[name];
+    env[name] = "invalid-email";
+    await expectDiagnostic(503, "INVALID_EMAIL_CONFIG");
+    env[name] = previous;
+  }
+  for (const binding of [undefined, {}, { send: "uncallable" }]) {
     env.EMAIL = binding;
-    assert.equal((await submit()).status, 503);
+    await expectDiagnostic(503, "EMAIL_BINDING_UNAVAILABLE");
     assert.equal(logs.at(-1)[0], "[contact] missing or unconfigured EMAIL binding");
     assert.ok(logs.at(-1)[1].requestId);
   }
   env.EMAIL = { send: async () => { throw "delivery rejected"; } };
-  assert.equal((await submit()).status, 502);
+  await expectDiagnostic(502, "DELIVERY_REJECTED");
   assert.equal(logs.at(-1)[1].message, "delivery rejected");
   assert.equal(logs.at(-1)[1].details, "delivery rejected");
-  delete processEnv.CONTACT_TO;
-  const response = await submit();
-  assert.equal(response.status, 503);
-  const diagnostic = logs.at(-1)[1];
-  assert.equal(diagnostic.message, "Missing runtime secret: CONTACT_TO");
-  assert.match(diagnostic.stack, /Missing runtime secret/);
-  assert.equal(diagnostic.details.message, diagnostic.message);
-  assert.ok(diagnostic.requestId);
-  assert.doesNotMatch(await response.text(), /CONTACT_TO|test-secret/);
+  for (const code of ["E_SENDER_NOT_VERIFIED", "E_RECIPIENT_NOT_ALLOWED", "E_SENDER_DOMAIN_NOT_AVAILABLE", "E_RATE_LIMIT_EXCEEDED", undefined, 42, "private provider detail"]) {
+    env.EMAIL = { send: async () => { throw Object.assign(new Error("private provider detail"), { code }); } };
+    await expectDiagnostic(502, typeof code === "string" && code.startsWith("E_") ? code : "DELIVERY_REJECTED");
+  }
+  for (const name of ["TURNSTILE_SECRET", "CONTACT_FROM", "CONTACT_TO"]) {
+    const previousBinding = env[name];
+    const previousFallback = processEnv[name];
+    delete env[name];
+    delete processEnv[name];
+    await expectDiagnostic(503, `CONFIG_MISSING_SECRET: ${name}`);
+    const diagnostic = logs.at(-1)[1];
+    assert.equal(diagnostic.message, `Missing runtime secret: ${name}`);
+    assert.match(diagnostic.stack, /Missing runtime secret/);
+    assert.equal(diagnostic.details.message, diagnostic.message);
+    assert.ok(diagnostic.requestId);
+    env[name] = previousBinding;
+    processEnv[name] = previousFallback;
+  }
+  Object.defineProperty(env, "CONTACT_FROM", { get: () => { throw new Error("private provider detail"); } });
+  await expectDiagnostic(503, "SUBMISSION_ERROR: Error");
 });
 
 test("Turnstile ready clears pending status and preserves submission outcomes", async () => {
   const source = await readFile(new URL("../src/pages/index.astro", import.meta.url), "utf8");
-  const listener = source.match(/document\.addEventListener\("iamjk:turnstile-ready", \(\) => \{[\s\S]*?\n\s*\}\);/);
+  const listener = source.match(/document\.addEventListener\("whoisjk:turnstile-ready", \(\) => \{[\s\S]*?\n\s*\}\);/);
   assert.ok(listener);
   for (const [status, message] of [
     ["is-pending", "Loading secure check…"],
@@ -93,7 +121,7 @@ test("Turnstile ready clears pending status and preserves submission outcomes", 
         contactStatus.textContent = text;
       },
     });
-    document.dispatchEvent(new Event("iamjk:turnstile-ready"));
+    document.dispatchEvent(new Event("whoisjk:turnstile-ready"));
     assert.equal(state, "ready");
     assert.equal(contactStatus.textContent, status === "is-pending" ? "" : message);
     assert.equal(contactStatus.className.trim(), status === "is-pending" ? "contact-status" : `contact-status ${status}`);
@@ -136,9 +164,9 @@ test("builds the personal site as a complete static document", async () => {
   assert.match(html, /href="#strengths"/i);
   assert.match(html, /href="#details"/i);
   assert.match(html, /001 \/ 008/i);
-  assert.match(html, /data-callback="iamjkTurnstileReady"/i);
-  assert.match(html, /data-expired-callback="iamjkTurnstileExpired"/i);
-  assert.match(html, /data-error-callback="iamjkTurnstileError"/i);
+  assert.match(html, /data-callback="whoisjkTurnstileReady"/i);
+  assert.match(html, /data-expired-callback="whoisjkTurnstileExpired"/i);
+  assert.match(html, /data-error-callback="whoisjkTurnstileError"/i);
   assert.doesNotMatch(html, /No funnel|No pitch deck|Build a life with enough substance|No single <span>lane/i);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|SkeletonPreview/i);
 
@@ -148,8 +176,10 @@ test("builds the personal site as a complete static document", async () => {
   assert.match(source, /import \{ ScrollTrigger \} from "gsap\/ScrollTrigger"/i);
   assert.match(source, /gsap\.matchMedia\(\)/i);
   assert.match(source, /gsap\.registerPlugin\(ScrollTrigger\)/i);
-  assert.match(source, /iamjkTurnstileExpired/i);
-  assert.match(source, /__iamjkTurnstileState/i);
+  assert.match(source, /whoisjkTurnstileExpired/i);
+  assert.match(source, /__whoisjkTurnstileState/i);
+  const sandboxScript = await readFile(new URL("../scripts/sandbox-node.sh", import.meta.url), "utf8");
+  assert.doesNotMatch(`${source}\n${sandboxScript}\n${html}`, /iamjk/i);
   assert.match(source, /prefers-reduced-motion/i);
   assert.match(source, /DETAIL/);
   assert.match(source, /const focusY = height \* 0\.46/);
@@ -240,14 +270,18 @@ test("builds the personal site as a complete static document", async () => {
   assert.match(caddy, /^whoisjk\.me \{/);
   assert.match(caddy, /reverse_proxy whoisjk-me:4321/);
 
-  const quadlet = await readFile(new URL("../deploy/iamjk-site.container.example", import.meta.url), "utf8");
+  const quadlet = await readFile(new URL("../deploy/whoisjk-me.container.example", import.meta.url), "utf8");
   assert.match(quadlet, /DropCapability=all/);
   assert.doesNotMatch(quadlet, /RESEND_/);
   assert.match(quadlet, /Cloudflare Workers Builds/);
   assert.match(quadlet, /ContainerName=whoisjk-me/);
 
-  const deployConfig = await readFile(new URL("../deploy/iamjk-site.local.conf.example", import.meta.url), "utf8");
-  assert.doesNotMatch(`${caddy}\n${quadlet}\n${deployConfig}`, /iamjk[.-]site|@iamjk_api/);
+  const deployConfig = await readFile(new URL("../deploy/whoisjk-me.local.conf.example", import.meta.url), "utf8");
+  assert.match(deployConfig, /DEPLOY_VPS_PATH="\/home\/jk\/whoisjk-me"/);
+  for (const name of await readdir(new URL("../deploy/", import.meta.url))) {
+    assert.doesNotMatch(name, /iamjk/i);
+    assert.doesNotMatch(await readFile(new URL(`../deploy/${name}`, import.meta.url), "utf8"), /iamjk/i);
+  }
 
   const deployment = await readFile(new URL("../scripts/deploy-vps.sh", import.meta.url), "utf8");
   assert.match(deployment, /VPS deployment is retired: this project now deploys to Cloudflare Workers/);

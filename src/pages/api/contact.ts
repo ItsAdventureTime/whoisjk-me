@@ -14,7 +14,7 @@ const validCountryCodes = new Set(countryCodes);
 function secret(name: keyof Pick<ContactEnvironment, "TURNSTILE_SECRET" | "CONTACT_FROM" | "CONTACT_TO">, env: ContactEnvironment): string {
   const value = env[name]?.trim() || (typeof process !== "undefined" ? process.env?.[name]?.trim() : undefined);
   if (value) return value;
-  throw new Error(`Missing runtime secret: ${name}`);
+  throw new Error(`Missing runtime secret: ${name}`, { cause: `CONFIG_MISSING_SECRET: ${name}` });
 }
 
 function textValue(value: unknown, maxLength: number): string {
@@ -96,15 +96,16 @@ export const POST: APIRoute = async ({ request }) => {
     const to = secret("CONTACT_TO", runtimeEnv);
     if (!validEmail(from) || !validEmail(to)) {
       console.error("[contact] invalid Cloudflare Email Service sender configuration", { requestId });
-      return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}.` }, { status: 503 });
+      return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}. (INVALID_EMAIL_CONFIG)` }, { status: 503 });
     }
-    if (!from.toLowerCase().endsWith("@notify.whoisjk.me")) {
-      console.error("[contact] invalid sender domain: CONTACT_FROM must end with @notify.whoisjk.me", { requestId });
-      return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}.` }, { status: 503 });
+    const fromDomain = from.toLowerCase().split("@")[1];
+    if (fromDomain !== "whoisjk.me" && !fromDomain.endsWith(".whoisjk.me")) {
+      console.error("[contact] invalid sender domain: CONTACT_FROM must use whoisjk.me or a subdomain", { requestId });
+      return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}. (INVALID_SENDER_DOMAIN)` }, { status: 503 });
     }
     if (!runtimeEnv.EMAIL || typeof runtimeEnv.EMAIL.send !== "function") {
       console.error("[contact] missing or unconfigured EMAIL binding", { requestId });
-      return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}.` }, { status: 503 });
+      return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}. (EMAIL_BINDING_UNAVAILABLE)` }, { status: 503 });
     }
     const emailBody = [`New message from whoisjk.me`, ``, `Name: ${name}`, `Country: ${country}`, `Email: ${email || "Not provided"}`, `Mobile: ${mobile || "Not provided"}`, ``, message].join("\n");
     try {
@@ -118,7 +119,8 @@ export const POST: APIRoute = async ({ request }) => {
         stack: error instanceof Error ? error.stack : undefined,
         details: error,
       });
-      return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}.` }, { status: 502 });
+      const code = typeof details?.code === "string" && /^E_[A-Z0-9_]{1,80}$/.test(details.code) ? details.code : "DELIVERY_REJECTED";
+      return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}. (${code})` }, { status: 502 });
     }
     console.info("[contact] message accepted by Cloudflare Email Service", { requestId });
     return Response.json({ message: "Thanks for writing. Your message was sent privately." }, { status: 200 });
@@ -130,7 +132,10 @@ export const POST: APIRoute = async ({ request }) => {
       stack: error instanceof Error ? error.stack : undefined,
       details: error,
     });
-    return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}.` }, { status: 503 });
+    const errorName = error instanceof Error && /^[A-Za-z][A-Za-z0-9]{0,63}$/.test(error.name) ? error.name : "unknown";
+    const diagnostic = error instanceof Error && typeof error.cause === "string" && /^CONFIG_MISSING_SECRET: (TURNSTILE_SECRET|CONTACT_FROM|CONTACT_TO)$/.test(error.cause)
+      ? error.cause : `SUBMISSION_ERROR: ${errorName}`;
+    return Response.json({ message: `I couldn’t send your message. Reference ${requestId.slice(0, 8)}. (${diagnostic})` }, { status: 503 });
   }
 };
 

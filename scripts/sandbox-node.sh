@@ -68,11 +68,11 @@ if (( with_pnpm )); then
   docker_args+=(--env "SANDBOX_PNPM_VERSION=$pnpm_version")
   exec docker "${docker_args[@]}" "$node_image" sh -c '
     set -eu
-    export HOME=/tmp/iamjk-home
-    mkdir -p "$HOME" /tmp/iamjk-pnpm
+    export HOME=/tmp/whoisjk-home
+    mkdir -p "$HOME" /tmp/whoisjk-pnpm
     npm install --no-audit --no-fund --loglevel=error \
-      --prefix /tmp/iamjk-pnpm "pnpm@$SANDBOX_PNPM_VERSION" >/dev/null
-    export PATH="/tmp/iamjk-pnpm/node_modules/.bin:$PATH"
+      --prefix /tmp/whoisjk-pnpm "pnpm@$SANDBOX_PNPM_VERSION" >/dev/null
+    export PATH="/tmp/whoisjk-pnpm/node_modules/.bin:$PATH"
     exec "$@"
   ' -- "$@"
 fi
