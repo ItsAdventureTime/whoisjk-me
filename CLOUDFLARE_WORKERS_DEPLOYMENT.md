@@ -21,6 +21,12 @@ When Workers Builds runs, it uses the Wrangler version declared in
 `package.json` and the Worker name in `wrangler.jsonc`. Keep those names
 identical or the build will fail.
 
+Top-level `"keep_vars": true` in `wrangler.jsonc` preserves dashboard-managed
+runtime variables, including `CONTACT_FROM` and `TURNSTILE_SITE_KEY`, during
+Workers Builds deployments. This setting concerns plaintext variables;
+Wrangler already preserves encrypted secrets during deployment. See
+[Wrangler configuration](https://developers.cloudflare.com/workers/wrangler/configuration/#source-of-truth).
+
 ## One-time Cloudflare setup
 
 1. Open Cloudflare Dashboard → **Workers & Pages** → **Create an app** →
@@ -62,6 +68,16 @@ Verify that the Turnstile secret is saved and deployed to the active Worker unde
 **Variables and Secrets**, not **Builds**. The endpoint checks `TURNSTILE_SECRET`
 in the Worker binding and then `process.env` before trying `TURNSTILE_SECRET_KEY`
 in the same order. Empty or whitespace-only values are treated as missing.
+
+Workers versions capture bindings along with code. Secret changes must be part
+of the version serving traffic: use **Deploy** after editing dashboard secrets.
+For this repository's release path, push the verified commit to `main` (or retry
+Workers Builds) and confirm the build deploys successfully with the configured
+runtime secrets. A successful Git push alone does not prove that those secrets
+are active. Dashboard **Deploy** can also activate secret changes without a Git
+build; `keep_vars` itself does not activate or create secrets. See
+[Workers secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
+and [versions and deployments](https://developers.cloudflare.com/workers/versions-and-deployments/).
 
 Also add `TURNSTILE_SITE_KEY` under **Settings** → **Builds** → **Build variables
 and secrets**. The homepage is prerendered, so it reads this public key during

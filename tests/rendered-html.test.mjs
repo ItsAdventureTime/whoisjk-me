@@ -260,6 +260,9 @@ test("builds the personal site as a complete static document", async () => {
   const astroConfig = await readFile(new URL("../astro.config.mjs", import.meta.url), "utf8");
   assert.match(astroConfig, /checkOrigin:\s*true/);
 
+  const wranglerConfig = JSON.parse(await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
+  assert.equal(wranglerConfig.keep_vars, true);
+
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /--accent:\s*#c8844a/i);
