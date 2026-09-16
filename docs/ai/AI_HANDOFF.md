@@ -14,15 +14,15 @@ FRONTIER and IMPLEMENTER are roles, not specific models or products.
 # Operator Control
 
 - Active task: `T-003`
-- Contract revision: `8`
+- Contract revision: `10`
 - Status: `READY_FOR_FRONTIER_REVIEW`
 - Next role: `FRONTIER`
 - Next phase: `PHASE_1`
-- Human action: `Run PHASE 1 with a FRONTIER for independent review.`
+- Human action: `Run PHASE 1 with a FRONTIER for independent review of revisions 9 and 10.`
 - Completion state: `NOT_COMPLETE`
 - Human validation required: `YES`
 - Last verified branch: `main`
-- Last verified HEAD: `f387443413692c4858c3c27d1f8ff2095498beb7` (verified and pushed revision 8 implementation; this boundary documentation follows in a separate commit)
+- Last verified HEAD: `d23c48651b69b71ae9ccc66c5aebb185d7f65290` (implementation commit; this handoff follows in a documentation commit)
 
 > HUMAN:
 >
@@ -198,6 +198,8 @@ Do not convert an observation into a claimed root cause unless verified.
 - Human validation on `https://whoisjk.me` reported FAIL: submission produced client errors `"I couldn’t send your message. Reference 774d5e83."` and `"I couldn’t send your message. Reference a6450297."`.
 - Human validation on `https://whoisjk.me` reported FAIL: submission produced client error `"I couldn’t send your message. Reference 531d7a0b. (CONFIG_MISSING_SECRET: TURNSTILE_SECRET)"`.
 - Human requested thorough review of Cloudflare Workers and Cloudflare Email Service (`send_email`), adjustments to codebase, and specifically noted that remaining references to `iamjk` should be updated to `whoisjk` / `whoisjk-me`.
+- Human validation observed FAIL on commit/push due to unavailable SSH signing identity.
+- Human explicitly updated release requirement: "Must be able to commit both local and remote git so that Cloudflare workers can automatically build and deploy the final product. Use `gh` command which is the GitHub CLI tool. It already is authenticated via \"https\" so there is no need to involve ssh and ssh key."
 
 # Scope
 
@@ -214,6 +216,11 @@ Do not convert an observation into a claimed root cause unless verified.
 - Propagate explicit error diagnostic codes and categories in client-facing error responses in `src/pages/api/contact.ts`.
 - Purge remaining `iamjk` references across `src/pages/index.astro`, `scripts/sandbox-node.sh`, `deploy/` templates, and `tests/rendered-html.test.mjs`.
 - Support `TURNSTILE_SECRET_KEY` fallback alias alongside `TURNSTILE_SECRET` in `src/pages/api/contact.ts` and update tests/types (Contract Revision 8).
+- Add `"keep_vars": true` to `wrangler.jsonc` to preserve Cloudflare Dashboard environment variables (`CONTACT_FROM`, `TURNSTILE_SITE_KEY`) during automated Workers Builds deployments (Contract Revision 9).
+- Update `tests/rendered-html.test.mjs` to assert `"keep_vars": true` in `wrangler.jsonc`.
+- Update `CLOUDFLARE_WORKERS_DEPLOYMENT.md` to document `"keep_vars": true` and explain that dashboard-configured secrets take effect in runtime upon a Workers Builds deployment.
+- Update `RELEASE_WORKFLOW.md` Section 4 to document GitHub CLI HTTPS release authentication and state that SSH signing is optional and must not block releases if SSH keys are unavailable in `ssh-agent` (Contract Revision 10).
+- Configure local repository `commit.gpgSign=false` so commits succeed without SSH agent keys.
 - Verify through local Docker Sandbox (`pnpm run check`, `pnpm test`, `git diff --check`).
 - Stage, commit, and push the verified changeset to `main` on `https://github.com/ItsAdventureTime/whoisjk-me`.
 
@@ -271,6 +278,17 @@ Current evidence:
 - Human validation FAIL on `https://whoisjk.me` with reference code `531d7a0b` and diagnostic `(CONFIG_MISSING_SECRET: TURNSTILE_SECRET)`.
 - Confirms that Turnstile challenge completed, honeypot and rate-limiting passed, and endpoint reached secret retrieval, but `env.TURNSTILE_SECRET` and `process.env.TURNSTILE_SECRET` are both undefined in the live Cloudflare Worker runtime.
 - Cloudflare Turnstile documentation confirms Turnstile secret keys are commonly named either `TURNSTILE_SECRET` or `TURNSTILE_SECRET_KEY`, and runtime secrets must be configured under **Workers & Pages** → `whoisjk-me` → **Settings** → **Variables and Secrets** (not **Builds**) and deployed to the active Worker.
+- Live reproduction via curl to `https://whoisjk.me/api/contact` confirmed HTTP 503 response with diagnostic `(CONFIG_MISSING_SECRET: TURNSTILE_SECRET)` (Reference `cb401b44`), matching human validation observation (Reference `5b417486`).
+- Human validation evidence via screenshot of Cloudflare Dashboard (Workers & Pages → `whoisjk-me` → Settings → Variables and Secrets) confirms that `CONTACT_FROM` and `TURNSTILE_SITE_KEY` are configured as variables, and `CONTACT_TO`, `TURNSTILE_SECRET`, and `TURNSTILE_SECRET_KEY` are configured as encrypted secrets.
+- Official Cloudflare Workers architecture confirms that Workers uses an immutable versioned deployment model. Secrets and variables saved in the dashboard attach to future versions; they are not dynamically injected into already-running deployments. Because no new deployment or build retry occurred after the human saved the secrets in the dashboard, the live Worker was still executing the older version snapshot deployed before the secrets were saved.
+- Furthermore, `wrangler.jsonc` lacks `"keep_vars": true`. When `wrangler deploy` executes in Cloudflare Workers Builds without `keep_vars: true`, Wrangler treats `wrangler.jsonc` as the authoritative source of truth for variables and can clear dashboard variables like `CONTACT_FROM` and `TURNSTILE_SITE_KEY`.
+- Pushing a commit to `origin main` containing `"keep_vars": true` triggers Cloudflare Workers Builds, compiling the project and deploying a new active version snapshot that bundles the dashboard secrets and preserves variables.
+- FRONTIER signing investigation confirmed git configuration: `user.signingkey` is `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ3rr3FnBVHFxYxtLZE4ES60Ck0ECB71xruspPMpKc1C`; `SSH_AUTH_SOCK` is active but `ssh-add -l` reports `The agent has no identities.`; `ssh-add --apple-load-keychain` reports no identities in keychain; test `git commit -S` exits 128 with `Couldn't find key in agent?`.
+- `RELEASE_WORKFLOW.md` Section 4 required stopping when the approved signer is unavailable.
+- `gh auth status` confirms account `ItsAdventureTime` is logged in via HTTPS with scopes `gist`, `read:org`, `repo`, `workflow`.
+- Remote origin URL is `https://github.com/ItsAdventureTime/whoisjk-me.git` using GitHub CLI credential helper.
+- Human explicitly directed to use `gh` GitHub CLI authenticated via HTTPS without requiring SSH keys or SSH commit signing.
+- Revision 9 implementation files (`wrangler.jsonc`, `tests/rendered-html.test.mjs`, `CLOUDFLARE_WORKERS_DEPLOYMENT.md`) remain staged and verified (`pnpm run check` 0 errors, `pnpm test` 4 passed).
 
 # Frontier Decision
 
@@ -315,6 +333,32 @@ Status:
   2. Update `src/env.d.ts` to declare optional `TURNSTILE_SECRET_KEY?: string` in `ContactEnvironment`, and update `tests/rendered-html.test.mjs` to test `TURNSTILE_SECRET_KEY` fallback alias resolution when `TURNSTILE_SECRET` is absent.
   3. Document the runtime secret scope requirement: HUMAN must verify in Cloudflare Dashboard (Workers & Pages → `whoisjk-me` → **Settings** → **Variables and Secrets**) that an encrypted secret named `TURNSTILE_SECRET` (or `TURNSTILE_SECRET_KEY`) is added and deployed (not placed under **Builds**).
   4. Verify in Docker Sandbox (`pnpm run check`, `pnpm test`, `git diff --check`), commit, and push to `origin main`.
+- **Configure `keep_vars: true` and Trigger Workers Builds Deployment (Contract Revision 9)**:
+  Classify Human Validation FAIL (reference `5b417486`) as `IN_SCOPE_DEFECT` / Deployment & Secret Activation Defect. Issue Contract Revision 9 for IMPLEMENTER:
+  1. In `wrangler.jsonc`, add `"keep_vars": true` at top-level.
+  2. In `tests/rendered-html.test.mjs`, add assertion verifying that `wrangler.jsonc` contains `"keep_vars": true`.
+  3. In `CLOUDFLARE_WORKERS_DEPLOYMENT.md`, document `"keep_vars": true` and explain that Cloudflare Workers versioned deployments require a Workers Builds deployment (Git push or dashboard retry) to bind dashboard-configured secrets to the active runtime version.
+  4. Verify in Docker Sandbox (`pnpm run check`, `pnpm test`, `git diff --check`), commit, and push to `origin main`.
+- **Triage Git Signing Identity Blocker**:
+  Independently investigated the signing blocker preventing revision 9 commit/push.
+  Confirmed empirical findings:
+  1. `~/.gitconfig` specifies `user.signingkey = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ3rr3FnBVHFxYxtLZE4ES60Ck0ECB71xruspPMpKc1C`, `gpg.format = ssh`, and `commit.gpgsign = true`.
+  2. `ssh-add -l` against Apple launchd socket reports `The agent has no identities.`; `ssh-add --apple-load-keychain` reports `No identity found in the keychain.`; no private key exists in `~/.ssh/`.
+  3. Running `git commit -S` fails with `error: Couldn't find key in agent? fatal: failed to write commit object`.
+  4. `RELEASE_WORKFLOW.md` explicitly mandates: `If the approved signer is unavailable, stop rather than creating an unsigned release or bypassing the repository policy.`
+  5. The previous unsigned overrides (`commit.gpgSign=false`) used in revisions 4-8 bypassed repository release policy without explicit human authorization.
+  6. The private signing key cannot be synthesized or unlocked autonomously by an AI agent in this environment.
+  7. Blocker escalated to HUMAN with three resolution options:
+     - Option 1 (Recommended): Load the SSH signing key into `ssh-agent` on macOS (or unlock 1Password/agent), then run PHASE 2 with IMPLEMENTER to execute signed commit and push.
+     - Option 2: Human directly executes `git commit -S -m "feat: configure keep_vars to preserve variables during Workers Builds deployment"` and `git push origin main` in their authenticated terminal session.
+     - Option 3: Human explicitly authorizes an unsigned commit override (`git -c commit.gpgSign=false commit`) for automated AI release commits in this repository.
+- **Align Release Workflow with GitHub CLI HTTPS Authentication (Contract Revision 10)**:
+  Classify Human Validation feedback as `CHANGED_REQUIREMENT`. Human explicitly directed: "Use `gh` command which is the GitHub CLI tool. It already is authenticated via 'https' so there is no need to involve ssh and ssh key."
+  1. Update `RELEASE_WORKFLOW.md` Section 4 to reflect that GitHub CLI (`gh`) HTTPS authentication is the authoritative release mechanism; SSH commit signing is optional and must not block releases if SSH keys are not loaded in `ssh-agent`.
+  2. Configure local repository `git config commit.gpgSign false`.
+  3. Verify in Docker Sandbox (`pnpm run check`, `pnpm test`, `git diff --check`).
+  4. Stage reviewed files (`wrangler.jsonc`, `tests/rendered-html.test.mjs`, `CLOUDFLARE_WORKERS_DEPLOYMENT.md`, `RELEASE_WORKFLOW.md`), commit, and push to `origin main` via GitHub CLI HTTPS.
+  5. Transition handoff to `READY_FOR_HUMAN_VALIDATION`.
 
 ---
 
@@ -445,6 +489,33 @@ Status:
     - **Verification**: Run `pnpm run check`, `pnpm test`, and `git diff --check` in Docker Sandbox.
     - **Stage, Commit, and Push**: Commit verified changes on `main` and push to `origin main` on GitHub.
     - **Handoff**: Transition handoff state to `READY_FOR_FRONTIER_REVIEW`.
+15. Add `keep_vars: true` to `wrangler.jsonc` and Trigger Production Deployment (Contract Revision 9):
+    - **Configuration**: In `wrangler.jsonc`, add `"keep_vars": true` at top-level.
+    - **Regression assertions**: In `tests/rendered-html.test.mjs`, assert that `wrangler.jsonc` contains `"keep_vars": true`.
+    - **Documentation**: In `CLOUDFLARE_WORKERS_DEPLOYMENT.md`, document `"keep_vars": true` and clarify that Cloudflare Workers versioned deployments require a Workers Builds deployment (or dashboard retry) to bind dashboard-configured secrets to the active runtime version.
+    - **Verification**: Run `pnpm run check`, `pnpm test`, and `git diff --check` in Docker Sandbox.
+    - **Stage, Commit, and Push**: Commit verified changes on `main` and push to `origin main` on GitHub.
+    - **Handoff**: Transition handoff state to `READY_FOR_FRONTIER_REVIEW`.
+16. Align Release Workflow with GitHub CLI HTTPS and Execute Commit/Push (Contract Revision 10):
+    - **Update Release Workflow**: In `RELEASE_WORKFLOW.md`, update Section 4 (Commit and push) to document that repository operations authenticate via GitHub CLI (`gh`) over HTTPS. Document that SSH commit signing is optional and not required when keys are not loaded in `ssh-agent`, and that local repository configuration `commit.gpgSign=false` is supported for automated releases.
+    - **Configure Local Repository**: Set `git config commit.gpgSign false` in the repository so `git commit` succeeds without requiring SSH agent keys.
+    - **Verify in Docker Sandbox**:
+      ```bash
+      jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check
+      jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test
+      git diff --check
+      ```
+    - **Stage and Commit**: Stage `wrangler.jsonc`, `tests/rendered-html.test.mjs`, `CLOUDFLARE_WORKERS_DEPLOYMENT.md`, and `RELEASE_WORKFLOW.md`:
+      ```bash
+      git add wrangler.jsonc tests/rendered-html.test.mjs CLOUDFLARE_WORKERS_DEPLOYMENT.md RELEASE_WORKFLOW.md
+      git commit -m "feat: configure keep_vars in wrangler.jsonc and align release workflow with GitHub CLI HTTPS"
+      ```
+    - **Push to Remote**: Push to `origin main` using GitHub CLI HTTPS:
+      ```bash
+      git push origin main
+      ```
+    - **Verify Clean State**: Ensure `git status --porcelain` is clean and `git ls-remote origin main` confirms the pushed commit.
+    - **Handoff**: Transition handoff state to `READY_FOR_HUMAN_VALIDATION`.
 
 ## Relevant Components
 
@@ -512,6 +583,13 @@ Status:
 - [x] `src/env.d.ts` declares optional `TURNSTILE_SECRET_KEY?: string` in `ContactEnvironment`.
 - [x] `tests/rendered-html.test.mjs` asserts `TURNSTILE_SECRET_KEY` fallback alias resolution and passes with 0 errors in Docker Sandbox.
 - [x] Revision 8 verified in Docker Sandbox, committed, and pushed to `origin main`.
+- [x] `wrangler.jsonc` contains `"keep_vars": true` at top level.
+- [x] `tests/rendered-html.test.mjs` asserts `"keep_vars": true` in `wrangler.jsonc` and passes with 0 errors in Docker Sandbox.
+- [x] `CLOUDFLARE_WORKERS_DEPLOYMENT.md` documents `"keep_vars": true` and versioned deployment secret binding behavior.
+- [x] `RELEASE_WORKFLOW.md` updated to document GitHub CLI HTTPS release authentication and optional SSH signing.
+- [x] Local repository configured with `commit.gpgSign=false`.
+- [x] Revisions 9 and 10 verified in Docker Sandbox, committed, and pushed to `origin main` via GitHub CLI HTTPS to trigger Cloudflare Workers Builds.
+- [ ] `git status --porcelain` clean after commit and push (final boundary handoff commit still to be recorded; verify after committing this file).
 
 ---
 
@@ -522,7 +600,7 @@ Status:
 - [x] `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check` exits with 0 errors.
 - [x] `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test` exits with 0 failures.
 - [x] `git diff --check` exits with 0 whitespace/formatting errors.
-- [x] `git status --porcelain` clean after commit and push.
+- [ ] `git status --porcelain` clean after commit and push.
 
 ## Human Validation
 
@@ -532,17 +610,11 @@ Required:
 
 HUMAN should validate:
 
-1. In Cloudflare Dashboard → **Workers & Pages** → `whoisjk-me` → **Settings** → **Variables and Secrets**:
-   - Add Environment Variables (plaintext): `TURNSTILE_SITE_KEY`, `CONTACT_FROM` (e.g. `contact@notify.whoisjk.me`).
-    - Verify encrypted runtime secret `TURNSTILE_SECRET` (or `TURNSTILE_SECRET_KEY`) and `CONTACT_TO` (destination email address) are saved and deployed to the active Worker, not only configured under Builds.
-   - Delete obsolete `RESEND_*` secrets (`RESEND_API_KEY`, `RESEND_FROM`, `RESEND_TO`).
-2. Verify in Cloudflare Dashboard → **Compute** → **Email Service** → **Email Sending** that `notify.whoisjk.me` domain is active and verified.
-3. After FRONTIER resolves the blocker, configure `TURNSTILE_SITE_KEY` under
-   **Settings** → **Builds** → **Build variables and secrets**, verify that the
-   production build receives it, then resume the authorized commit/push to `main`.
-4. Monitor the automatic build and deploy in Cloudflare Workers Builds.
-5. Visit `https://whoisjk.me/`, inspect Turnstile challenge widget loading with the dashboard site key, and submit a test contact form message.
-6. Verify receipt of notification email in `CONTACT_TO` inbox sent from `notify.whoisjk.me`.
+1. Confirm Cloudflare Workers Builds automatically builds and deploys the commit containing Contract Revision 9 (`keep_vars: true`).
+2. Verify in Cloudflare Dashboard → **Workers & Pages** → `whoisjk-me` → **Settings** → **Variables and Secrets** that runtime variables (`TURNSTILE_SITE_KEY`, `CONTACT_FROM`) and secrets (`TURNSTILE_SECRET` or `TURNSTILE_SECRET_KEY`, `CONTACT_TO`) remain intact and active.
+3. Visit `https://whoisjk.me/`, complete the Turnstile challenge, and submit a test contact message.
+4. Verify successful submission confirmation appears and remains visible on the page.
+5. Verify email receipt in `CONTACT_TO` inbox sent from `notify.whoisjk.me`.
 
 Relevant environment/device/browser:
 
@@ -552,9 +624,17 @@ Relevant environment/device/browser:
 
 Status:
 
-`IMPLEMENTED`
+`IMPLEMENTED` — revisions 9 and 10 verified and pushed; independent FRONTIER review remains required.
 
 ## Material Changes
+
+- Revision 10: release workflow uses GitHub CLI HTTPS authentication with optional
+  SSH signing. Repository-local `commit.gpgSign=false` and the `gh` Git credential
+  helper are configured. Preserved and released the existing revision 9 changes.
+
+- Revision 9: added top-level `keep_vars: true`, a parsed top-level configuration
+  assertion, and deployment guidance distinguishing plaintext variable preservation
+  from activating runtime secrets. Existing implementation and FRONTIER edits preserved.
 
 - Revision 8: `secret()` preserves primary Worker/process lookup precedence,
   then tries `TURNSTILE_SECRET_KEY` in the Worker binding and process environment.
@@ -616,6 +696,11 @@ Status:
 
 ## Files / Components Changed
 
+Revisions 9 and 10 change `wrangler.jsonc`, `tests/rendered-html.test.mjs`,
+`CLOUDFLARE_WORKERS_DEPLOYMENT.md`, `RELEASE_WORKFLOW.md`, and this handoff.
+The four implementation files were committed and pushed as `d23c486`;
+repository-local signing and Git credential configuration are outside tracked files.
+
 Revision 8 changes `src/pages/api/contact.ts`, `src/env.d.ts`,
 `tests/rendered-html.test.mjs`, `CLOUDFLARE_WORKERS_DEPLOYMENT.md`, and this handoff.
 Existing FRONTIER contract edits and previous implementation are preserved.
@@ -648,6 +733,37 @@ remain preserved.
 - `docs/ai/AI_HANDOFF.md` (this boundary update)
 
 ## Verification Executed
+
+- Revision 10 Docker Sandbox `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check`
+  — PASS, exit 0; generated Worker types current, Astro 0 errors, 0 warnings, 0 hints.
+- Revision 10 Docker Sandbox `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test`
+  — PASS, exit 0; production build and all 4 tests passed. Existing Node
+  `stripTypeScriptTypes` experimental warning remains.
+- Revision 10 `jk-sbx-project exec git diff --check`, host `git diff --check`,
+  and `git diff --cached --check` — PASS. Reviewed the final implementation diff.
+- `gh auth status --hostname github.com` confirmed the authenticated account and
+  HTTPS protocol; `gh auth setup-git --hostname github.com` succeeded.
+  `git config --local --get commit.gpgSign` returned `false`.
+- Commit/push — PASS: implementation commit `d23c48651b69b71ae9ccc66c5aebb185d7f65290`
+  pushed to `origin main`; `git ls-remote origin refs/heads/main` matched local HEAD.
+  This final handoff is the remaining tracked change and is committed separately.
+- Historical revision 9 evidence below describes the prior invocation, before
+  the human authorized the revision 10 release policy.
+
+- Revision 9 Docker Sandbox `pnpm run check` — PASS, exit 0, generated Worker
+  types current; Astro 0 errors, 0 warnings, 0 hints. Initial invocation printed
+  clean diagnostics but exited 1 after losing its Docker socket; the permitted
+  retry completed with exit 0.
+- Revision 9 Docker Sandbox `pnpm test` — PASS, exit 0, production build and
+  all 4 tests passed; existing Node `stripTypeScriptTypes` experimental warning.
+- Revision 9 `jk-sbx-project exec git diff --check`, host `git diff --check`,
+  and `git diff --cached --check` — PASS. Final implementation diff inspected.
+- Signed commit failed with `Couldn't get agent socket?`; retry with host access
+  reached the agent but failed with `Couldn't find key in agent?`. An identity-list
+  diagnostic was blocked by the LeanCTX allowlist and was not bypassed.
+- No unsigned fallback, signing configuration change, commit, push, or production
+  deployment was performed. Branch/HEAD remains `main` at
+  `110e34171cf614aca6335aeac36c322546458ae4`; working tree is intentionally not clean.
 
 - Revision 8 focused Docker Sandbox regression failed before the fix with
   `Missing runtime secret: TURNSTILE_SECRET` for alias-only configuration,
@@ -739,10 +855,24 @@ Earlier revision evidence:
 
 ## Result
 
-`READY_FOR_FRONTIER_REVIEW` — the revision 8 contract is implemented, freshly
-verified, committed, and pushed to `origin main`.
+`READY_FOR_FRONTIER_REVIEW` — revisions 9 and 10 pass required local checks and
+are pushed to `origin main`. Per the PHASE 2 successful implementation boundary,
+FRONTIER reviews independently before HUMAN validation; the contract's direct
+`READY_FOR_HUMAN_VALIDATION` instruction is not used to skip that review.
 
 ## Remaining Uncertainty
+
+- Revisions 9 and 10 are pushed to the configured Workers Builds production branch.
+  Successful production deployment, active bindings, persistent submission confirmation,
+  and inbox receipt remain unverified. HUMAN validation remains FAIL pending retest.
+- Evidence correction to earlier revision 9 diagnosis: official
+  [Wrangler configuration](https://developers.cloudflare.com/workers/wrangler/configuration/#source-of-truth)
+  states that secrets are preserved independently of `keep_vars`; official
+  [secret configuration](https://developers.cloudflare.com/workers/configuration/secrets/)
+  supports dashboard **Deploy** to activate secrets without a Git build.
+  Thus missing `keep_vars` does not establish the missing-secret root cause,
+  and a Git push does not prove that configured secrets are active. The deployment
+  guide reflects this distinction; live version/binding evidence is still needed.
 
 - Revision 8 proves local alias lookup behavior, not active production secret
   configuration, deployment success, challenge acceptance, or inbox receipt.
@@ -776,6 +906,11 @@ verified, committed, and pushed to `origin main`.
 
 ## Human Validation Recommendations
 
+- After FRONTIER accepts revisions 9 and 10, confirm Workers Builds deployed the
+  pushed commit and runtime variables/secrets remain active. Submit a contact
+  message, verify confirmation persists through Turnstile reset, and confirm
+  inbox receipt. Preserve HUMAN validation FAIL until a successful live retest.
+
 - After revision 8 independent review, verify an encrypted `TURNSTILE_SECRET`
   or `TURNSTILE_SECRET_KEY` is saved and deployed under Workers & Pages →
   `whoisjk-me` → Settings → Variables and Secrets (runtime, not Builds).
@@ -805,7 +940,7 @@ verified, committed, and pushed to `origin main`.
 
 # Frontier Review
 
-The acceptance below applies to revision 7. Revision 8 independent review is pending.
+The acceptance below applies to revision 8. Revision 9 independent review is pending.
 
 Status:
 
@@ -824,21 +959,23 @@ Allowed decisions:
 
 ## Findings
 
-- Independently reviewed Revision 7 implementation in commit `41a01b51dabdf99ff3c66559476d5f945ab4b75f` and documentation handoff commit `77c7d48a71672f9a57c56584004a983b5855b4db`.
+- Independently reviewed Revision 8 implementation in commit `f387443413692c4858c3c27d1f8ff2095498beb7` and documentation handoff commit `110e34171cf614aca6335aeac36c322546458ae4`.
 - Inspected code changes in `src/pages/api/contact.ts`:
-  - Sender domain validation parses the domain after `@` case-insensitively and allows `whoisjk.me` and any `*.whoisjk.me` subdomain, rejecting lookalikes (e.g. `evilwhoisjk.me`) and unverified domains with a descriptive log and a 503 response tagged `(INVALID_SENDER_DOMAIN)`.
-  - Client-facing error responses append bounded diagnostic tags (`(CONFIG_MISSING_SECRET: <name>)`, `(INVALID_EMAIL_CONFIG)`, `(INVALID_SENDER_DOMAIN)`, `(EMAIL_BINDING_UNAVAILABLE)`, `(<details.code || "DELIVERY_REJECTED">)`, `(SUBMISSION_ERROR: <errorName>)`), enabling immediate in-browser diagnosis while preserving privacy by keeping sensitive stacks, secrets, and inbox addresses restricted to server-side Observability logs.
-- Inspected codebase naming purge:
-  - `src/pages/index.astro`: updated Turnstile callbacks (`whoisjkTurnstileReady`, `whoisjkTurnstileExpired`, `whoisjkTurnstileError`), state (`__whoisjkTurnstileState`), and custom events (`whoisjk:turnstile-*`). Event listener maintains the `is-pending` check to preserve submission outcomes (`is-success`, `is-error`) across reset cycles.
-  - `scripts/sandbox-node.sh`: temporary paths updated to `/tmp/whoisjk-home` and `/tmp/whoisjk-pnpm`.
-  - `deploy/`: example files renamed to `whoisjk-me.container.example` and `whoisjk-me.local.conf.example`.
-  - Negative assertions confirmed across `src/pages/index.astro`, `scripts/sandbox-node.sh`, `deploy/`, and rendered HTML to ensure no active `iamjk` references remain.
+  - `secret()` helper updated to check `TURNSTILE_SECRET` first on `env` then `process.env`, falling back to `TURNSTILE_SECRET_KEY` on `env` then `process.env` when `name === "TURNSTILE_SECRET"`.
+  - Empty and whitespace-only values are properly trimmed and treated as missing.
+  - Missing secret exception retains cause `CONFIG_MISSING_SECRET: TURNSTILE_SECRET`, which produces a client-safe 500 error tagged with the variable name while preventing leakage of values or stack traces to the browser.
+  - Secret lookup logic remains strictly bounded and isolated from `CONTACT_FROM` and `CONTACT_TO`.
+- Inspected type declarations and documentation:
+  - `src/env.d.ts`: Added optional `TURNSTILE_SECRET_KEY?: string` to `ContactEnvironment`.
+  - `CLOUDFLARE_WORKERS_DEPLOYMENT.md`: Clarified that `TURNSTILE_SECRET` or `TURNSTILE_SECRET_KEY` must be configured under **Settings** → **Variables and Secrets** (runtime secrets) on the Worker, contrasting with build variables under **Settings** → **Builds**.
+- Inspected regression test suite in `tests/rendered-html.test.mjs`:
+  - New test `Turnstile secret alias preserves precedence and missing-secret errors` verifies binding alias, process alias, binding over process precedence, primary over alias precedence, whitespace trimming, missing secret error cause, and isolation from `CONTACT_FROM`/`CONTACT_TO`.
 - Independently re-ran automated verification in Docker Sandbox:
   - `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm run check` -> PASS (0 errors, 0 warnings, 0 hints; generated worker types up to date).
-  - `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test` -> PASS (3 tests passed, 0 failures; static prerendering `/index.html` completed).
+  - `jk-sbx-project exec ./scripts/sandbox-node.sh --with-pnpm pnpm test` -> PASS (4 tests passed, 0 failures; static prerendering `/index.html` completed).
   - `git diff --check` -> PASS (clean formatting and whitespace).
-- Confirmed Git status clean and commits pushed to remote `main` (`origin/main` at `77c7d48`).
-- Technical implementation accepted. Advancing to `READY_FOR_HUMAN_VALIDATION` for end-to-end verification on `https://whoisjk.me`.
+- Confirmed Git status clean and commits pushed to remote `main` (`origin/main` at `110e34171cf614aca6335aeac36c322546458ae4`).
+- Technical implementation accepted. Advancing to `READY_FOR_HUMAN_VALIDATION` for dashboard secret verification and live end-to-end retest on `https://whoisjk.me`.
 
 # Human Validation
 
@@ -855,6 +992,7 @@ Allowed values:
 
 ## Observed Result
 
+- Revision 8 / Live validation: Contact form submission on `https://whoisjk.me` produced client-facing error: `"I couldn’t send your message. Reference 5b417486. (CONFIG_MISSING_SECRET: TURNSTILE_SECRET)"`. Confirmed via live curl probe `cb401b44` returning HTTP 503 `{"message":"I couldn’t send your message. Reference cb401b44. (CONFIG_MISSING_SECRET: TURNSTILE_SECRET)"}`.
 - Revision 7 / Live validation: Contact form submission on `https://whoisjk.me` produced client-facing error: `"I couldn’t send your message. Reference 531d7a0b. (CONFIG_MISSING_SECRET: TURNSTILE_SECRET)"`.
 - Historical Revision 6: Contact form submissions produced client-facing errors: `"I couldn’t send your message. Reference 774d5e83."` and `"I couldn’t send your message. Reference a6450297."`.
 - Historical Revision 4: Live contact form submission produced client-facing error: `"I couldn’t send your message. Reference 263c5a7c."`.
@@ -868,17 +1006,19 @@ Allowed values:
 ## Reproduction / Environment
 
 - Live browser visit to `https://whoisjk.me`, filling out contact form, completing Turnstile challenge, and clicking Send.
+- Live probe via `curl -s -X POST https://whoisjk.me/api/contact` with valid contact fields.
 
 ## Evidence
 
-- Error message: `"I couldn’t send your message. Reference 531d7a0b. (CONFIG_MISSING_SECRET: TURNSTILE_SECRET)"`.
-- Historical error messages: `"Reference 774d5e83."`, `"Reference a6450297."`, `"Reference 263c5a7c."`.
+- Human validation screenshot shows `TURNSTILE_SECRET` and `TURNSTILE_SECRET_KEY` configured as Encrypted secrets under Cloudflare Dashboard → Workers & Pages → `whoisjk-me` → Settings → Variables and Secrets.
+- Live client-facing error message: `"I couldn’t send your message. Reference 5b417486. (CONFIG_MISSING_SECRET: TURNSTILE_SECRET)"`.
+- Live curl probe response: `{"message":"I couldn’t send your message. Reference cb401b44. (CONFIG_MISSING_SECRET: TURNSTILE_SECRET)"}`.
 
 # Human Feedback
 
 Status:
 
-`IN_SCOPE_DEFECT`
+`CHANGED_REQUIREMENT`
 
 Allowed classifications:
 
@@ -890,15 +1030,28 @@ Allowed classifications:
 
 ## Analysis
 
-- Classify as `IN_SCOPE_DEFECT` / Credential Configuration Defect.
-- Root cause diagnosis:
-  - The diagnostic tag `(CONFIG_MISSING_SECRET: TURNSTILE_SECRET)` confirms client error reporting works as designed.
-  - In `src/pages/api/contact.ts`, `secret("TURNSTILE_SECRET", runtimeEnv)` threw because neither `env.TURNSTILE_SECRET` nor `process.env.TURNSTILE_SECRET` was populated in the running Cloudflare Worker.
-  - On Cloudflare Workers, variables configured under **Settings** → **Builds** → **Build variables and secrets** are build-time only (injected during static prerendering `pnpm run build`), whereas runtime Worker endpoints require encrypted secrets configured under **Settings** → **Variables and Secrets** (and deployed to the active Worker).
-  - Furthermore, official Cloudflare Turnstile documentation and examples commonly use `TURNSTILE_SECRET_KEY` alongside `TURNSTILE_SECRET`.
-  - Correction:
-    1. In `src/pages/api/contact.ts`, add fallback alias checking for `TURNSTILE_SECRET_KEY` on `env` and `process.env` when `TURNSTILE_SECRET` is absent.
-    2. HUMAN must verify in Cloudflare Dashboard (Workers & Pages → `whoisjk-me` → **Settings** → **Variables and Secrets**) that an encrypted secret named `TURNSTILE_SECRET` (or `TURNSTILE_SECRET_KEY`) is saved and deployed to the active Worker.
+- **Revision 10 Analysis (Release Policy & GitHub CLI HTTPS)**:
+  - Human validation observed failure to commit/push due to missing SSH signing identity (`Couldn't find key in agent?`).
+  - Human explicitly updated release policy: "Must be able to commit both local and remote git so that Cloudflare workers can automatically build and deploy the final product. Use `gh` command which is the GitHub CLI tool. It already is authenticated via 'https' so there is no need to involve ssh and ssh key."
+  - Classified as `CHANGED_REQUIREMENT`.
+  - Issue Contract Revision 10 for IMPLEMENTER:
+    1. Update `RELEASE_WORKFLOW.md` Section 4 to reflect that repository operations authenticate via GitHub CLI (`gh`) over HTTPS, and SSH commit signing is optional and does not block releases if SSH keys are not in `ssh-agent`.
+    2. Configure local repository `git config commit.gpgSign false`.
+    3. Verify in Docker Sandbox (`pnpm run check`, `pnpm test`, `git diff --check`).
+    4. Stage reviewed files (`wrangler.jsonc`, `tests/rendered-html.test.mjs`, `CLOUDFLARE_WORKERS_DEPLOYMENT.md`, `RELEASE_WORKFLOW.md`), commit, and push to `origin main` via GitHub CLI HTTPS.
+    5. Transition handoff to `READY_FOR_HUMAN_VALIDATION`.
+- **Revision 9 Analysis (Deployment & Secret Activation)**:
+  - Classify as `IN_SCOPE_DEFECT` / Deployment & Secret Activation Defect.
+  - Root cause diagnosis:
+    - The human evidence (dashboard screenshot) confirms that `TURNSTILE_SECRET` and `TURNSTILE_SECRET_KEY` are saved as encrypted secrets under **Settings** → **Variables and Secrets** in the Cloudflare Dashboard.
+    - However, Cloudflare Workers operates on an immutable versioned deployment model. Saving variables or secrets in the dashboard updates configuration for future versions; it does not inject them into an already-running Worker deployment snapshot.
+    - Because no new deployment or build retry occurred after the human configured the secrets, the live Worker serving `https://whoisjk.me` was executing the pre-existing version snapshot deployed before the secrets were saved.
+    - Furthermore, `wrangler.jsonc` lacked `"keep_vars": true`. When `npx wrangler deploy` runs in Cloudflare Workers Builds without `"keep_vars": true`, Wrangler treats `wrangler.jsonc` as the source of truth for variables and can clear dashboard-configured variables (`CONTACT_FROM`, `TURNSTILE_SITE_KEY`).
+    - Correction (Contract Revision 9):
+      1. In `wrangler.jsonc`, add `"keep_vars": true` at top-level.
+      2. In `tests/rendered-html.test.mjs`, add assertion verifying `"keep_vars": true` in `wrangler.jsonc`.
+      3. In `CLOUDFLARE_WORKERS_DEPLOYMENT.md`, document `"keep_vars": true` and note that dashboard secret updates take effect in runtime upon a Workers Builds deployment.
+      4. Run Docker Sandbox verification, commit, and push to `origin main` to trigger Cloudflare Workers Builds to deploy a fresh version bundling the dashboard secrets.
 
 ---
 
@@ -906,12 +1059,11 @@ Allowed classifications:
 
 Status:
 
-`RESOLVED_PENDING_HUMAN_DASHBOARD_SECRET`
+`RESOLVED`
 
-- **Diagnosis**: The reported response indicates no usable primary `TURNSTILE_SECRET` value was resolved. Active production secret configuration remains unverified; build-only variables do not provide runtime secrets.
-- **Resolution**:
-  1. Code: Revision 8 fallback alias support is implemented, verified locally, and pushed; independent FRONTIER review is pending.
-  2. Dashboard: HUMAN verifies in Cloudflare Dashboard → **Workers & Pages** → `whoisjk-me` → **Settings** → **Variables and Secrets** (Runtime secrets, NOT Build variables) that encrypted secret `TURNSTILE_SECRET` (or `TURNSTILE_SECRET_KEY`) is added and that changes are deployed.
+- The signing identity blocker was resolved by Human instruction updating release policy to use GitHub CLI (`gh`) HTTPS authentication without requiring SSH keys or SSH commit signing.
+- `RELEASE_WORKFLOW.md` Section 4 now documents GitHub CLI HTTPS authentication and optional SSH signing under Contract Revision 10.
+- Preserved revision 9 implementation and revision 10 release changes passed verification and were committed and pushed as `d23c486`.
 
 ---
 
@@ -919,7 +1071,7 @@ Status:
 
 - Role: `FRONTIER`
 - Phase: `PHASE_1`
-- Action: Independently review revision 8 implementation and verification evidence; assess readiness for runtime-secret verification and live HUMAN retest.
+- Action: Independently review revisions 9 and 10 and their verification evidence; assess deployment evidence before routing to HUMAN validation. Do not infer live delivery success from local checks or Git push.
 - Human action: Run PHASE 1 with a FRONTIER for independent review.
 
 ---
